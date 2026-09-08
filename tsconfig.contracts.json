@@ -1,0 +1,11 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "types": ["node"]
+  },
+  // Contract tests are typed against the artifact declarations Hardhat
+  // generates during compile, so this config only resolves after
+  // `npm run contracts:build`. Kept separate from the root config so a fresh
+  // clone can still run `npm run typecheck` without compiling Solidity first.
+  "include": ["test/contracts", "hardhat.config.ts", "artifacts/**/*.d.ts"]
+}
