@@ -1,0 +1,110 @@
+{
+  "version": 2,
+  "payoutAddressNote": "READ THIS BEFORE BELIEVING THE PAYOUT COLUMN. Every payoutAddress below is a STAND-IN, not a real operator address. No indexer or protocol team has opted into this system — every source is marked consent: pending, and none of them has given us an address. The addresses are deliberately derived from the public Hardhat/Anvil test mnemonic ('test test test test test test test test test test test junk', addressIndex 0..5) so that they are self-evidently not ours and not privileged: anyone can derive the keys, and anyone can call claim() as a source to check the payee path works. What is being demonstrated is the CONTRACT - that a paid read splits revenue across the deployments that answered it, withholds a slashable portion, and can refund a buyer out of it. The recipient list is not a claim that these teams are being paid. Note that a payoutAddress is keyed by DEPLOYMENT: the same deployment id appearing in two families is one sourceId onchain (keccak256 of the id string) and must therefore carry the same address.",
+  "note": "Adding a protocol to a family is a change to THIS FILE ONLY. No code changes. A family is defined by a schema IPFS hash, which makes conformance an objective fact drawn from The Graph's own network subgraph rather than a label we assert: two deployments speak the same schema if and only if their schemaIpfsHash values are byte-identical. Deployment ids are pinned, and a response whose _meta.deployment does not match its pinned id is dropped, not merged. Discover sources with `npm run discover -- --schema <hash> --network mainnet --live`, then verify with `npm run registry:doctor`.",
+  "families": {
+    "aave-v3-ethereum": {
+      "label": "Aave V3 Ethereum — independent deployment agreement",
+      "schema": "messari/lending",
+      "schemaIpfsHash": "QmNnWjciPb8Qy83RmdgctZmwzwofamjkfmkd5NjK1Swwsa",
+      "schemaUrl": "https://github.com/messari/subgraphs/tree/master/schema-lending.graphql",
+      "comparability": "identical",
+      "comparabilityNote": "Every source here indexes the same protocol on the same chain with the same schema, so they should agree exactly. Disagreement beyond the tolerance is not variance — it means at least one source is wrong, and the read is refused.",
+      "agreementToleranceBps": 100,
+      "policy": {
+        "maxBlockLag": 50,
+        "maxAgeSeconds": 900,
+        "minSources": 2
+      },
+      "rowsPath": "markets",
+      "metrics": {
+        "supplyAPY": { "unit": "percent", "kind": "rate", "side": "LENDER", "type": "VARIABLE" },
+        "borrowAPY": { "unit": "percent", "kind": "rate", "side": "BORROWER", "type": "VARIABLE" },
+        "tvlUSD": { "unit": "usd", "kind": "field", "field": "totalValueLockedUSD" },
+        "totalBorrowUSD": { "unit": "usd", "kind": "field", "field": "totalBorrowBalanceUSD" }
+      },
+      "query": "query PMMarkets($first: Int!) { _meta { deployment hasIndexingErrors block { number hash timestamp } } markets(first: $first, orderBy: totalValueLockedUSD, orderDirection: desc) { id name inputToken { symbol decimals } totalValueLockedUSD totalDepositBalanceUSD totalBorrowBalanceUSD rates { side type rate } } }",
+      "sources": [
+        {
+          "protocol": "aave-v3-ethereum-a",
+          "chainId": 1,
+          "idKind": "deployment",
+          "id": "QmcXE5QVcBcvcaJddPxd8mFs6W9xt7STmwfgguoiM6ddAd",
+          "payoutAddress": "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
+          "consent": "pending"
+        },
+        {
+          "protocol": "aave-v3-ethereum-b",
+          "chainId": 1,
+          "idKind": "deployment",
+          "id": "QmRjc5Dawv9vbxUZsNKakHcYV728P2NLFSBpk4MDHZpPCm",
+          "payoutAddress": "0x70997970C51812dc3A010C7d01b50e0d17dc79C8",
+          "consent": "pending"
+        }
+      ]
+    },
+    "lending-v1-ethereum": {
+      "label": "Standardized lending markets on Ethereum — cross-protocol survey",
+      "schema": "messari/lending",
+      "schemaIpfsHash": "QmNnWjciPb8Qy83RmdgctZmwzwofamjkfmkd5NjK1Swwsa",
+      "schemaUrl": "https://github.com/messari/subgraphs/tree/master/schema-lending.graphql",
+      "comparability": "peer",
+      "comparabilityNote": "These are different lending protocols that happen to speak one standardized schema. They are NOT expected to agree — a USDC supply rate legitimately differs between Aave and Spark. Spread is information about the market, not evidence of a fault, so no agreement check is applied. Read the per-source values, not just the median.",
+      "policy": {
+        "maxBlockLag": 50,
+        "maxAgeSeconds": 900,
+        "minSources": 3
+      },
+      "rowsPath": "markets",
+      "metrics": {
+        "supplyAPY": { "unit": "percent", "kind": "rate", "side": "LENDER", "type": "VARIABLE" },
+        "borrowAPY": { "unit": "percent", "kind": "rate", "side": "BORROWER", "type": "VARIABLE" },
+        "tvlUSD": { "unit": "usd", "kind": "field", "field": "totalValueLockedUSD" },
+        "totalBorrowUSD": { "unit": "usd", "kind": "field", "field": "totalBorrowBalanceUSD" }
+      },
+      "query": "query PMMarkets($first: Int!) { _meta { deployment hasIndexingErrors block { number hash timestamp } } markets(first: $first, orderBy: totalValueLockedUSD, orderDirection: desc) { id name inputToken { symbol decimals } totalValueLockedUSD totalDepositBalanceUSD totalBorrowBalanceUSD rates { side type rate } } }",
+      "sources": [
+        {
+          "protocol": "aave-v3-ethereum",
+          "chainId": 1,
+          "idKind": "deployment",
+          "id": "QmcXE5QVcBcvcaJddPxd8mFs6W9xt7STmwfgguoiM6ddAd",
+          "payoutAddress": "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
+          "consent": "pending"
+        },
+        {
+          "protocol": "aave-v2-ethereum",
+          "chainId": 1,
+          "idKind": "deployment",
+          "id": "QmdwBHGxokamYsLfMVk6fXfry3Ss9emEiTy6wptd1ecysG",
+          "payoutAddress": "0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC",
+          "consent": "pending"
+        },
+        {
+          "protocol": "spark-lend-ethereum",
+          "chainId": 1,
+          "idKind": "deployment",
+          "id": "QmTVumjhubXWP8MeDx5g114MRX99E4Gie5mFqVurttF99X",
+          "payoutAddress": "0x90F79bf6EB2c4f870365E785982E1f101E93b906",
+          "consent": "pending"
+        },
+        {
+          "protocol": "aave-arc-ethereum",
+          "chainId": 1,
+          "idKind": "deployment",
+          "id": "QmdsSNTCMe1zYjWWb78W7JjeMZbn7cHKBHm3iNxRwqaLwT",
+          "payoutAddress": "0x15d34AAf54267DB7D7c367839AAf71A00a2C6A65",
+          "consent": "pending"
+        },
+        {
+          "protocol": "uwu-lend-ethereum",
+          "chainId": 1,
+          "idKind": "deployment",
+          "id": "QmUVAKNmyUCZxtn4MrUzSxswavk8gBAMLJaisSQRyyezi4",
+          "payoutAddress": "0x9965507D1a55bcC2695C58ba16FB37d819B0A4dc",
+          "consent": "pending"
+        }
+      ]
+    }
+  }
+}
