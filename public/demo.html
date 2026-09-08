@@ -1,0 +1,1296 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>SourceMark — no proof, no answer</title>
+<meta name="description" content="Paid, provenance-checked reads of standardized onchain data. x402 on Hedera, sources pinned on The Graph, revenue split onchain with slashable holdback. A refusal is free." />
+<link rel="icon" type="image/svg+xml" href="/assets/sourcemark-icon-light.svg?v=2" />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400..800&family=Spline+Sans+Mono:wght@300..700&display=swap" rel="stylesheet" />
+<style>
+  :root{
+    /* Paper-stock light theme. Ink for type, mint kept for the mark and for
+       highlight blocks — the two places a saturated colour can carry weight
+       without becoming unreadable body text. */
+    --paper:#f6f7f7;
+    --paper-2:#eff0f1;
+    --surface:#fdfdfe;
+    --surface-2:#eaebec;
+    --ink:#13161c;
+    --muted:#55585d;
+    --faint:#84868a;
+    --line:#d6d8d9;
+    --line-strong:#a8abae;
+    --dark:#0d0f14;
+    --dark-ink:#f0f2f4;
+    --dark-muted:#9aa0aa;
+    --mint:#2fe6a6;
+    --mint-deep:#00875a;
+    --gain:#007f3d;
+    --loss:#c51d24;
+    --hold:#8a5b00;
+    --r:3px;
+    --mono:'Spline Sans Mono',ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+    --display:'Bricolage Grotesque','Helvetica Neue',Arial,sans-serif;
+  }
+  *{box-sizing:border-box}
+  html{scroll-behavior:smooth}
+  body{
+    margin:0;color:var(--ink);background:var(--paper);
+    font:15px/24px var(--mono);-webkit-font-smoothing:antialiased;
+  }
+  /* Faint scanlines. The whole page sits on them, which is what stops a light
+     theme from reading as a blank browser default. */
+  body::before{
+    content:'';position:fixed;inset:0;z-index:-2;pointer-events:none;
+    background:repeating-linear-gradient(180deg,rgba(19,22,28,.021) 0 1px,transparent 1px 4px);
+  }
+
+  .wrap{max-width:1160px;margin:0 auto;padding:0 28px}
+  h1,h2,h3,h4{font-family:var(--display);font-weight:700;letter-spacing:-.028em;margin:0}
+
+  /* ── Mono section label, e.g. "// HOW THE GATE WORKS" ── */
+  .lbl{
+    font:500 11px/1 var(--mono);text-transform:uppercase;letter-spacing:.18em;
+    color:var(--faint);margin:0 0 16px;
+  }
+  .lbl b{color:var(--ink);font-weight:500}
+  section{padding:72px 0;border-top:1px solid var(--line)}
+  h2.sec{font-size:clamp(26px,3.1vw,36px);line-height:1.04;margin:0 0 12px;max-width:24ch}
+  p.lede{color:var(--muted);font-size:14.5px;margin:0 0 30px;max-width:74ch}
+
+  /* ── Nav ── */
+  nav{
+    position:sticky;top:0;z-index:40;background:rgba(246,247,247,.92);
+    backdrop-filter:blur(10px);border-bottom:1px solid var(--line);
+  }
+  nav .inner{max-width:1160px;margin:0 auto;padding:13px 28px;display:flex;align-items:center;gap:26px}
+  .mark{display:flex;align-items:center;gap:9px;text-decoration:none;color:var(--ink);white-space:nowrap}
+  .mark img{width:22px;height:22px;display:block}
+  .mark .wm{font-family:var(--display);font-weight:700;font-size:19px;letter-spacing:-.035em}
+  .mark .wm i{font-style:normal;color:var(--mint-deep)}
+  nav .links{display:flex;gap:22px;margin-left:8px}
+  nav .links a{
+    font:500 11.5px/1 var(--mono);text-transform:uppercase;letter-spacing:.13em;
+    color:var(--muted);text-decoration:none;
+  }
+  nav .links a:hover{color:var(--ink)}
+  nav .right{margin-left:auto;display:flex;align-items:center;gap:10px}
+  .netpill{
+    display:flex;align-items:center;gap:7px;border:1px solid var(--line-strong);border-radius:var(--r);
+    padding:6px 10px;font:500 11px/1 var(--mono);text-transform:uppercase;letter-spacing:.11em;color:var(--muted);
+  }
+  .led{width:6px;height:6px;border-radius:50%;background:var(--line-strong);flex:none}
+  .led.up{background:var(--mint);box-shadow:0 0 0 3px rgba(47,230,166,.22)}
+  .led.ok{background:var(--gain)} .led.bad{background:var(--loss)} .led.warn{background:var(--hold)}
+
+  /* ── Hero ── */
+  .hero{position:relative;padding:104px 0 76px;border-top:0;overflow:hidden}
+  .smoke{position:absolute;inset:-10% -6% auto;height:150%;width:112%;z-index:-1;opacity:.5;pointer-events:none}
+  /* Halftone over the smoke, so the texture reads as print rather than blur. */
+  .hero::after{
+    content:'';position:absolute;inset:0;z-index:-1;pointer-events:none;
+    background-image:radial-gradient(rgba(19,22,28,.5) .5px,transparent .6px);
+    background-size:3px 3px;opacity:.14;
+    mask-image:radial-gradient(80% 70% at 62% 34%,#000,transparent 72%);
+    -webkit-mask-image:radial-gradient(80% 70% at 62% 34%,#000,transparent 72%);
+  }
+  .hero .lockup{height:34px;width:auto;display:block;margin:0 0 30px}
+  h1{
+    font-size:clamp(44px,8.4vw,104px);line-height:.9;letter-spacing:-.045em;
+    margin:0 0 26px;max-width:15ch;text-transform:uppercase;
+  }
+  h1 .hl{
+    background:var(--mint);padding:0 .1em .06em;margin-left:-.06em;
+    box-decoration-break:clone;-webkit-box-decoration-break:clone;
+  }
+  h1 .caret{
+    display:inline-block;width:.055em;height:.78em;background:var(--ink);
+    vertical-align:-.06em;margin-left:.09em;animation:blink 1.15s steps(1) infinite;
+  }
+  @keyframes blink{50%{opacity:0}}
+  .hero .sub{font-size:16px;line-height:27px;color:var(--muted);max-width:62ch;margin:0 0 12px}
+  .hero .sub b{color:var(--ink);font-weight:600}
+  .cta{
+    display:inline-flex;align-items:center;gap:10px;margin:22px 0 0;
+    border:1px solid var(--line-strong);border-radius:999px;padding:11px 20px;
+    font:500 13px/1 var(--mono);color:var(--ink);text-decoration:none;background:rgba(253,253,254,.6);
+  }
+  .cta:hover{background:var(--ink);color:var(--paper);border-color:var(--ink)}
+  .cta .dia{color:var(--mint-deep)}
+  .cta:hover .dia{color:var(--mint)}
+
+  /* ── Hero evidence strip ── */
+  .evidence{
+    display:grid;grid-template-columns:repeat(auto-fit,minmax(168px,1fr));
+    border:1px solid var(--line);border-radius:var(--r);background:var(--surface);
+    margin:52px 0 0;overflow:hidden;
+  }
+  .ev{padding:16px 18px;border-left:1px solid var(--line)}
+  .ev:first-child{border-left:0}
+  .ev .k{font:500 10px/1 var(--mono);text-transform:uppercase;letter-spacing:.15em;color:var(--faint);margin-bottom:9px}
+  .ev .v{font-family:var(--display);font-size:25px;font-weight:700;letter-spacing:-.035em;line-height:1.1}
+  .ev .n{font:11.5px/16px var(--mono);color:var(--faint);margin-top:4px}
+  .ev.free .v{color:var(--mint-deep)}
+
+  .builton{margin:40px 0 0;display:flex;align-items:center;gap:16px;flex-wrap:wrap}
+  .builton .t{font:500 10.5px/1 var(--mono);text-transform:uppercase;letter-spacing:.17em;color:var(--faint)}
+  .builton .row{display:flex;gap:8px;flex-wrap:wrap}
+  .builton span.b{
+    font:500 12px/1 var(--mono);letter-spacing:.03em;color:var(--ink);
+    border:1px solid var(--line);background:var(--surface);border-radius:var(--r);padding:8px 12px;
+  }
+
+  /* ── Inverted statement panel ──
+     Carries the supplied halftone: a 7px dot grid on a dark plate, faded out by
+     an elliptical mask. The mask is pushed off-centre so the texture sits beside
+     the copy instead of underneath it. */
+  .invert{position:relative;overflow:hidden;background:var(--dark);color:var(--dark-ink);border-radius:var(--r);padding:44px 44px 46px}
+  .invert::before{
+    content:'';position:absolute;inset:0;pointer-events:none;opacity:.5;
+    background-image:radial-gradient(circle,rgba(255,255,255,.6) 1px,transparent 1.6px);
+    background-size:7px 7px;
+    mask-image:radial-gradient(ellipse 62% 96% at 88% 50%,#000 8%,transparent 78%);
+    -webkit-mask-image:radial-gradient(ellipse 62% 96% at 88% 50%,#000 8%,transparent 78%);
+  }
+  .invert > *{position:relative}
+  .invert h3{font-size:clamp(22px,2.6vw,32px);line-height:1.08;max-width:26ch;margin:0 0 16px}
+  .invert h3 .hl{background:var(--mint);color:var(--dark);padding:0 .1em .06em}
+  .invert p{color:var(--dark-muted);font-size:14.5px;max-width:76ch;margin:0}
+  .invert code{font-family:var(--mono);color:var(--mint);font-size:13.5px}
+  .invert .foot{
+    margin-top:26px;padding-top:20px;border-top:1px solid rgba(240,242,244,.14);
+    display:flex;gap:12px;flex-wrap:wrap;
+  }
+  .invert .foot span{
+    font:500 11px/1 var(--mono);text-transform:uppercase;letter-spacing:.12em;
+    color:var(--dark-muted);border:1px solid rgba(240,242,244,.18);border-radius:var(--r);padding:7px 11px;
+  }
+
+  /* ── Numbered step cards ── */
+  .steps-grid{display:grid;gap:0;grid-template-columns:repeat(auto-fit,minmax(268px,1fr));border-top:1px solid var(--line)}
+  .st{padding:22px 24px 26px;border-bottom:1px solid var(--line);border-right:1px solid var(--line)}
+  .st .top{display:flex;align-items:baseline;justify-content:space-between;gap:14px;margin-bottom:18px}
+  .st .no{font-family:var(--display);font-size:20px;font-weight:700;color:var(--line-strong);letter-spacing:-.02em}
+  .st .role{font:500 10px/1 var(--mono);text-transform:uppercase;letter-spacing:.15em;color:var(--faint)}
+  .st h4{font-size:19px;line-height:1.14;margin:0 0 9px}
+  .st p{margin:0;font-size:13.5px;line-height:22px;color:var(--muted)}
+  .st.gate{background:var(--surface)}
+  .st.gate .no{color:var(--mint-deep)}
+  .st.gate .role{color:var(--mint-deep)}
+  .st.gate h4 span{background:var(--mint);padding:0 .12em .04em}
+
+  /* ── Console ── */
+  .console{border:1px solid var(--line-strong);border-radius:var(--r);background:var(--surface);overflow:hidden}
+  .qbar{display:flex;gap:16px;flex-wrap:wrap;align-items:flex-end;padding:20px 22px;background:var(--paper-2);border-bottom:1px solid var(--line)}
+  .field{display:flex;flex-direction:column;gap:7px;min-width:0}
+  .field label{font:500 10px/1 var(--mono);text-transform:uppercase;letter-spacing:.15em;color:var(--faint)}
+  select,input[type=text]{
+    background:var(--surface);color:var(--ink);border:1px solid var(--line-strong);border-radius:var(--r);
+    padding:9px 11px;font:13px var(--mono);min-width:158px;
+  }
+  select:focus,input:focus{outline:none;border-color:var(--ink)}
+  .qmeta{margin-left:auto;display:flex;flex-wrap:wrap;gap:6px;align-items:center;justify-content:flex-end}
+  .tag{
+    display:inline-flex;align-items:center;gap:7px;font:500 11.5px/1 var(--mono);
+    border:1px solid var(--line);background:var(--surface);border-radius:var(--r);padding:7px 10px;color:var(--muted);
+  }
+  .tag b{color:var(--ink);font-weight:600}
+  .tag a{color:var(--mint-deep)}
+
+  .acts{display:grid;grid-template-columns:repeat(auto-fit,minmax(262px,1fr))}
+  .act{padding:22px 22px 20px;border-right:1px solid var(--line);border-bottom:1px solid var(--line);display:flex;flex-direction:column}
+  .act .top{display:flex;align-items:baseline;justify-content:space-between;gap:10px;margin-bottom:14px}
+  .act .no{font-family:var(--display);font-size:17px;font-weight:700;color:var(--line-strong)}
+  .act .role{font:500 10px/1 var(--mono);text-transform:uppercase;letter-spacing:.14em;color:var(--faint)}
+  .act h4{font-size:17px;line-height:1.16;margin:0 0 8px}
+  .act p{margin:0 0 18px;font-size:13px;line-height:21px;color:var(--muted);flex:1}
+  button{
+    width:100%;background:var(--ink);color:var(--paper);border:1px solid var(--ink);border-radius:var(--r);
+    padding:11px 14px;font:500 13px/1 var(--mono);cursor:pointer;transition:background .12s,color .12s;
+  }
+  button:hover:not(:disabled){background:#000}
+  button:disabled{opacity:.4;cursor:not-allowed}
+  button.ghost{background:transparent;color:var(--ink);border-color:var(--line-strong)}
+  button.ghost:hover:not(:disabled){background:var(--surface-2)}
+  button.mint{background:var(--mint);color:var(--ink);border-color:#22c98f}
+  button.mint:hover:not(:disabled){background:#25d698}
+  button.sm{width:auto;padding:8px 13px;font-size:12px}
+  .btnrow{display:flex;gap:8px;flex-wrap:wrap;margin-top:16px}
+
+  .result{padding:22px}
+  .rhead{display:flex;align-items:center;gap:12px;margin-bottom:16px}
+  .rhead .lbl{margin:0}
+  .rhead .sp{margin-left:auto}
+  .placeholder{color:var(--faint);font-size:13.5px;padding:34px 0;text-align:center}
+
+  /* ── Result pieces ── */
+  .trace{list-style:none;padding:0;margin:0 0 18px;border:1px solid var(--line);border-radius:var(--r);overflow:hidden}
+  .trace li{display:flex;gap:12px;padding:11px 14px;font-size:13px;background:var(--paper-2);align-items:baseline}
+  .trace li+li{border-top:1px solid var(--line)}
+  .trace .mark2{flex:0 0 13px;font-weight:700}
+  .trace .name{flex:0 0 74px;color:var(--faint);font-size:11.5px;text-transform:uppercase;letter-spacing:.09em}
+  .trace .txt{color:var(--muted);min-width:0;word-break:break-word}
+
+  .answer{position:relative;overflow:hidden;display:flex;align-items:baseline;gap:14px;flex-wrap:wrap;padding:24px 24px;background:var(--dark);border-radius:var(--r);margin-bottom:16px}
+  .answer::before{
+    content:'';position:absolute;inset:0;pointer-events:none;opacity:.42;
+    background-image:radial-gradient(circle,rgba(255,255,255,.6) 1px,transparent 1.6px);
+    background-size:7px 7px;
+    mask-image:radial-gradient(ellipse 58% 100% at 96% 50%,#000 6%,transparent 74%);
+    -webkit-mask-image:radial-gradient(ellipse 58% 100% at 96% 50%,#000 6%,transparent 74%);
+  }
+  .answer > *{position:relative}
+  .answer .v{font-family:var(--display);font-size:clamp(38px,5vw,54px);font-weight:700;letter-spacing:-.045em;line-height:1;color:var(--mint)}
+  .answer .u{color:var(--dark-muted);font-size:15px}
+  .answer .tags{display:flex;gap:7px;flex-wrap:wrap;margin-left:auto}
+  .answer .tags .tag{background:transparent;border-color:rgba(240,242,244,.2);color:var(--dark-muted)}
+  .answer .tags .tag b{color:var(--dark-ink)}
+
+  .tbl{overflow-x:auto;border:1px solid var(--line);border-radius:var(--r);margin-bottom:16px;background:var(--surface)}
+  table{width:100%;border-collapse:collapse;font-size:12.5px}
+  th{
+    text-align:left;color:var(--faint);font:500 10px/1 var(--mono);text-transform:uppercase;letter-spacing:.12em;
+    padding:11px 13px;background:var(--paper-2);border-bottom:1px solid var(--line);white-space:nowrap;
+  }
+  td{padding:10px 13px;border-bottom:1px solid var(--line);font-size:12.5px;white-space:nowrap}
+  tr:last-child td{border-bottom:0}
+  td.wrap{white-space:normal;min-width:210px;color:var(--muted)}
+  td.num,th.num{text-align:right}
+  .ok{color:var(--gain)} .bad{color:var(--loss)} .warn{color:var(--hold)}
+  .dim{color:var(--muted)} .faint{color:var(--faint)}
+  td.st-ok{color:var(--gain);font-weight:600} td.st-no{color:var(--loss);font-weight:600}
+
+  .banner{border-radius:var(--r);padding:14px 16px;font-size:13.2px;margin-bottom:13px;border:1px solid;line-height:21px}
+  .banner strong{font-weight:600}
+  .banner.good{border-color:#b7dcc6;background:#eaf6ef;color:#0a5c35}
+  .banner.hold{border-color:#e6d3a0;background:#fbf3de;color:#7a5400}
+  .banner.err{border-color:#f0c1bd;background:#fdedec;color:#96161c}
+  .banner.info{border-color:var(--line);background:var(--paper-2);color:var(--muted)}
+  .banner code{font-family:var(--mono);font-size:12px;background:rgba(19,22,28,.06);padding:1px 5px;border-radius:2px}
+  .banner .s{display:block;font-size:12.5px;line-height:20px;margin-top:6px;opacity:.86}
+  .banner a{color:inherit;text-decoration:underline;text-underline-offset:2px}
+
+  .block{margin-top:22px;padding-top:20px;border-top:1px solid var(--line)}
+  .blockhead{font:500 10px/1 var(--mono);text-transform:uppercase;letter-spacing:.15em;color:var(--faint);margin-bottom:13px}
+  .blockhead b{color:var(--ink);font-weight:500}
+  .blockhead span{text-transform:none;letter-spacing:0;font-size:11.5px}
+
+  /* Code stays inverted — it is the one place a light theme benefits from the
+     contrast, and it echoes the answer panel. */
+  pre{
+    font:12px/20px var(--mono);background:var(--dark);color:#d8dde3;border-radius:var(--r);
+    padding:16px;overflow:auto;max-height:400px;margin:0;white-space:pre-wrap;word-break:break-word;
+  }
+  details.raw{margin-top:14px}
+  details.raw summary{cursor:pointer;font:500 11px/1 var(--mono);text-transform:uppercase;letter-spacing:.13em;color:var(--faint);padding:6px 0;list-style:none}
+  details.raw summary::-webkit-details-marker{display:none}
+  details.raw summary::before{content:'+ '}
+  details.raw[open] summary::before{content:'− '}
+  details.raw summary:hover{color:var(--ink)}
+
+  /* ── Tabs ── */
+  .tabs{display:flex;gap:0;flex-wrap:wrap;border:1px solid var(--line-strong);border-bottom:0;border-radius:var(--r) var(--r) 0 0;overflow:hidden;background:var(--paper-2)}
+  .tab{
+    background:transparent;border:0;border-right:1px solid var(--line);color:var(--muted);
+    width:auto;padding:13px 18px;font:500 11.5px/1 var(--mono);text-transform:uppercase;letter-spacing:.12em;
+    border-radius:0;cursor:pointer;
+  }
+  .tab:hover:not(.on){background:var(--surface-2);color:var(--ink)}
+  .tab.on{background:var(--ink);color:var(--paper);border-color:var(--ink)}
+  .tabbody{border:1px solid var(--line-strong);border-radius:0 0 var(--r) var(--r);padding:22px;background:var(--surface)}
+
+  /* ── Stack cards ── */
+  .cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));border-top:1px solid var(--line)}
+  .card{padding:24px;border-right:1px solid var(--line);border-bottom:1px solid var(--line)}
+  .card .top{display:flex;align-items:baseline;justify-content:space-between;gap:12px;margin-bottom:16px}
+  .card .top h4{font-size:21px}
+  .card .role{font:500 10px/1 var(--mono);text-transform:uppercase;letter-spacing:.15em;color:var(--faint)}
+  .card ul{margin:0;padding-left:0;list-style:none}
+  .card li{font-size:13.2px;line-height:21px;color:var(--muted);padding:11px 0;border-top:1px solid var(--line)}
+  .card li:first-child{border-top:0;padding-top:0}
+  .card li b{color:var(--ink);font-weight:600}
+  .card code{font-size:12px;color:var(--mint-deep);word-break:break-all}
+
+  .limits{list-style:none;padding:0;margin:0;border-top:1px solid var(--line)}
+  .limits li{
+    display:grid;grid-template-columns:minmax(190px,260px) 1fr;gap:24px;
+    padding:18px 0;border-bottom:1px solid var(--line);font-size:13.4px;line-height:22px;color:var(--muted);
+  }
+  .limits li b{font-family:var(--display);font-size:16px;font-weight:700;color:var(--ink);letter-spacing:-.02em}
+  .limits li code{font-size:12px;color:var(--mint-deep)}
+
+  footer{border-top:1px solid var(--line);padding:52px 0 76px;color:var(--faint);font-size:12.5px;line-height:22px}
+  footer .ep{display:grid;gap:0;border-top:1px solid var(--line);margin:0 0 26px}
+  footer .ep div{display:grid;grid-template-columns:minmax(210px,280px) 1fr;gap:22px;padding:11px 0;border-bottom:1px solid var(--line)}
+  footer .ep code{font-size:12px;color:var(--ink);white-space:nowrap}
+  footer .ep span{color:var(--muted)}
+  footer .curl{
+    font:12px/20px var(--mono);color:#d8dde3;background:var(--dark);border-radius:var(--r);
+    padding:14px 16px;overflow-x:auto;white-space:nowrap;margin-bottom:26px;
+  }
+  footer .sig{display:flex;align-items:center;gap:11px;flex-wrap:wrap;padding-top:8px}
+  footer .sig img{width:20px;height:20px}
+  footer .sig .wm{font-family:var(--display);font-weight:700;font-size:16px;letter-spacing:-.035em;color:var(--ink)}
+  footer .sig .wm i{font-style:normal;color:var(--mint-deep)}
+  a{color:var(--mint-deep)}
+
+  @media(max-width:860px){
+    nav .links{display:none}
+    .qmeta{margin-left:0;justify-content:flex-start}
+    .answer .tags{margin-left:0}
+    .limits li,footer .ep div{grid-template-columns:1fr;gap:6px}
+    .invert{padding:30px 24px 32px}
+  }
+</style>
+</head>
+<body>
+
+<nav>
+  <div class="inner">
+    <a class="mark" href="#top">
+      <img src="/assets/sourcemark-icon-light.svg?v=2" alt="" />
+      <span class="wm">source<i>mark</i></span>
+    </a>
+    <div class="links">
+      <a href="#how">Gate</a>
+      <a href="#demo">Live demo</a>
+      <a href="#explore">Data</a>
+      <a href="#stack">Stack</a>
+      <a href="/openapi.json" target="_blank" rel="noopener">API</a>
+    </div>
+    <div class="right">
+      <span class="netpill"><span class="led" id="navled"></span> <span id="navnet">hedera testnet</span></span>
+    </div>
+  </div>
+</nav>
+
+<main id="top">
+
+  <!-- ────────────────────────────── HERO ────────────────────────────── -->
+  <section class="hero">
+    <svg class="smoke" aria-hidden="true" xmlns="http://www.w3.org/2000/svg">
+      <filter id="sm" x="0" y="0" width="100%" height="100%">
+        <feTurbulence type="fractalNoise" baseFrequency="0.009" numOctaves="4" seed="7" />
+        <feColorMatrix type="saturate" values="0" />
+        <feComponentTransfer><feFuncA type="linear" slope="0.5" intercept="0" /></feComponentTransfer>
+      </filter>
+      <rect width="100%" height="100%" filter="url(#sm)" />
+      <rect width="100%" height="100%" fill="url(#fade)" />
+      <defs>
+        <radialGradient id="fade" cx="62%" cy="30%" r="62%">
+          <stop offset="55%" stop-color="#f6f7f7" stop-opacity="0" />
+          <stop offset="100%" stop-color="#f6f7f7" stop-opacity="1" />
+        </radialGradient>
+      </defs>
+    </svg>
+
+    <div class="wrap">
+      <img class="lockup" src="/assets/sourcemark-lockup-light.svg?v=2" alt="SourceMark" />
+
+      <h1>No proof,<br /><span class="hl">no answer.</span><span class="caret"></span></h1>
+
+      <p class="sub">
+        A metered read layer for onchain data that <b>declines to answer</b> rather than
+        guess. One query fans out across independently pinned subgraph deployments speaking
+        the same schema, each checked against live chain head.
+      </p>
+      <p class="sub">
+        Enough of them fresh and in agreement, you get a number and a signed receipt.
+        Otherwise you get a refusal — <b>and a refusal is free</b>.
+      </p>
+
+      <a class="cta" href="#demo"><span class="dia">◇</span> run it live · real HBAR, real subgraphs ↓</a>
+
+      <div class="evidence" id="evidence">
+        <div class="ev"><div class="k">reading service…</div><div class="v">—</div></div>
+      </div>
+
+      <div class="builton">
+        <span class="t">// built on</span>
+        <span class="row">
+          <span class="b">The Graph</span>
+          <span class="b">Hedera</span>
+          <span class="b">x402 · Blocky402</span>
+          <span class="b">Bazantic</span>
+        </span>
+      </div>
+    </div>
+  </section>
+
+  <!-- ────────────────────────────── THE RULE ────────────────────────────── -->
+  <section>
+    <div class="wrap">
+      <div class="invert">
+        <h3>Verified before the read. Settled <span class="hl">only after</span> it passes.</h3>
+        <p>
+          A read that fails the provenance policy returns <code>409 REFUSED</code> and is never
+          charged. You only ever pay for an answer this service is willing to stand behind — which
+          removes the incentive to return a plausible-looking number instead of admitting the data
+          was not there. Every other property below follows from that one ordering.
+        </p>
+        <div class="foot">
+          <span>402 unpaid</span>
+          <span>409 refused · 0 charged</span>
+          <span>200 answered · signed · split onchain</span>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ────────────────────────────── PIPELINE ────────────────────────────── -->
+  <section id="how">
+    <div class="wrap">
+      <p class="lbl">// how the gate works</p>
+      <h2 class="sec">Seven stages between your query and a number.</h2>
+      <p class="lede">
+        The fourth is the product. Everything before it is plumbing, and everything after it
+        only runs because the fourth one passed.
+      </p>
+      <div class="steps-grid">
+        <div class="st">
+          <div class="top"><span class="no">01</span><span class="role">paywall</span></div>
+          <h4>Challenge</h4>
+          <p>An unpaid read returns <code>402</code> carrying x402 payment requirements. No key, no account, no signup.</p>
+        </div>
+        <div class="st">
+          <div class="top"><span class="no">02</span><span class="role">verify</span></div>
+          <h4>Prove funds</h4>
+          <p>The facilitator validates the signed Hedera transfer. Nothing has moved yet, and nothing will unless the data holds.</p>
+        </div>
+        <div class="st">
+          <div class="top"><span class="no">03</span><span class="role">fan out</span></div>
+          <h4>Ask every source</h4>
+          <p>The same query hits every pinned deployment in the family, in parallel, through The Graph gateway.</p>
+        </div>
+        <div class="st gate">
+          <div class="top"><span class="no">04</span><span class="role">the product</span></div>
+          <h4><span>Provenance gate</span></h4>
+          <p>Block lag and age against real chain head, market depth, quorum, and cross-source agreement. Any failure refuses the whole read.</p>
+        </div>
+        <div class="st">
+          <div class="top"><span class="no">05</span><span class="role">money</span></div>
+          <h4>Settle · or refuse</h4>
+          <p>A passing read settles in HBAR. A failing one returns 409 with the payment deliberately unsettled.</p>
+        </div>
+        <div class="st">
+          <div class="top"><span class="no">06</span><span class="role">evidence</span></div>
+          <h4>Sign a receipt</h4>
+          <p>Answer, every source, its block, and the admitting policy are hashed and signed, so the claim can be reproduced by anyone.</p>
+        </div>
+        <div class="st">
+          <div class="top"><span class="no">07</span><span class="role">liability</span></div>
+          <h4>Split · hold back</h4>
+          <p>Revenue routes onchain to the sources that answered. A slice stays unvested and is slashable if the receipt is disproved.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ────────────────────────────── DEMO CONSOLE ────────────────────────────── -->
+  <section id="demo">
+    <div class="wrap">
+      <p class="lbl">// live demo · <b>hedera testnet</b> · <b>live graph data</b></p>
+      <h2 class="sec">Run it against the real thing.</h2>
+      <p class="lede">
+        Nothing here is scripted or mocked. The agent is a real x402 client that takes a 402,
+        signs a Hedera transfer and retries; the sources are live mainnet subgraph deployments,
+        queried at the block shown.
+      </p>
+
+      <div class="console">
+        <div class="qbar">
+          <div class="field">
+            <label for="family">Schema family</label>
+            <select id="family"><option>loading…</option></select>
+          </div>
+          <div class="field">
+            <label for="metric">Metric</label>
+            <select id="metric"><option>—</option></select>
+          </div>
+          <div class="field">
+            <label for="asset">Asset</label>
+            <input type="text" id="asset" value="USDC" placeholder="USDC" style="min-width:112px" />
+          </div>
+          <div class="qmeta" id="qmeta"></div>
+        </div>
+
+        <div class="acts">
+          <div class="act">
+            <div class="top"><span class="no">01</span><span class="role">paywall</span></div>
+            <h4>Request without paying</h4>
+            <p>Ask with no payment attached. The 402 tells you exactly what to pay, to whom, on which network — and the policy it will be judged against.</p>
+            <button class="ghost" id="b402">Get the 402 challenge</button>
+          </div>
+          <div class="act">
+            <div class="top"><span class="no">02</span><span class="role">x402 · hbar</span></div>
+            <h4>Let an agent pay</h4>
+            <p>A real buyer signs a Hedera transfer, the facilitator co-signs as fee payer, and the gateway settles — but only after the data clears the policy.</p>
+            <button id="bpay">Run the buying agent</button>
+          </div>
+          <div class="act">
+            <div class="top"><span class="no">03</span><span class="role">refusal</span></div>
+            <h4>Force a refusal</h4>
+            <p>Demand freshness the sources cannot meet. Payment verifies, the policy fails, settlement is declined. You are not charged.</p>
+            <button class="ghost" id="bstale">Demand impossible freshness</button>
+          </div>
+          <div class="act">
+            <div class="top"><span class="no">04</span><span class="role">resale</span></div>
+            <h4>Arrive via Bazantic</h4>
+            <p>Bazantic bills its callers in USDC on Base — a rail this service does not price in — so it presents a shared key instead. Same gate, same onchain split.</p>
+            <button class="mint" id="bresale">Read through the resale channel</button>
+          </div>
+        </div>
+
+        <div class="result">
+          <div class="rhead">
+            <p class="lbl">// result</p>
+            <div class="sp" id="rsp"></div>
+          </div>
+          <div id="result"><div class="placeholder">Pick a family above, then run any of the four.</div></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ────────────────────────────── EXPLORER ────────────────────────────── -->
+  <section id="explore">
+    <div class="wrap">
+      <p class="lbl">// everything as data</p>
+      <h2 class="sec">The registry, the money and the disputes are all readable.</h2>
+      <p class="lede">
+        Not a dashboard bolted onto a private database. Each tab below is one public endpoint,
+        rendered — including the raw JSON it came from.
+      </p>
+
+      <div class="tabs" id="tabs">
+        <button class="tab on" data-tab="registry">Registry</button>
+        <button class="tab" data-tab="policy">Policy</button>
+        <button class="tab" data-tab="payouts">Payouts</button>
+        <button class="tab" data-tab="disputes">Disputes</button>
+        <button class="tab" data-tab="health">Service</button>
+      </div>
+      <div class="tabbody" id="tabbody"><div class="placeholder">loading…</div></div>
+    </div>
+  </section>
+
+  <!-- ────────────────────────────── STACK ────────────────────────────── -->
+  <section id="stack">
+    <div class="wrap">
+      <p class="lbl">// built on</p>
+      <h2 class="sec">Three integrations, none decorative.</h2>
+      <p class="lede">Remove any one of them and a specific, nameable capability disappears.</p>
+      <div class="cards">
+        <div class="card">
+          <div class="top"><h4>The Graph</h4><span class="role">the data</span></div>
+          <ul>
+            <li>Every source is a <b>pinned deployment id</b>, never a floating name — so a receipt names the exact indexed code that answered.</li>
+            <li>Conformance is byte-identity of the <b>schema IPFS hash</b> from the network subgraph, not a label somebody typed.</li>
+            <li>A shared schema is what makes fanning one query across unrelated protocols mean anything at all.</li>
+          </ul>
+        </div>
+        <div class="card">
+          <div class="top"><h4>Hedera</h4><span class="role">the money</span></div>
+          <ul>
+            <li><b>x402 over HBAR</b> through the Blocky402 facilitator: verify before the read, settle after it passes.</li>
+            <li><b><code>SourcePayouts</code></b> holds the split, the holdback and the vesting clock, so liability is enforced by a contract instead of by us.</li>
+            <li>Sub-cent fees and fast finality are what make a per-read micropayment sane rather than theatrical.</li>
+          </ul>
+        </div>
+        <div class="card">
+          <div class="top"><h4>Bazantic</h4><span class="role">distribution</span></div>
+          <ul>
+            <li>Fronts this service to buyers who pay in <b>USDC on Base</b> and cannot answer a Hedera x402 challenge.</li>
+            <li>Registered from <code>/openapi.json</code>, so the listing is generated from the service's own contract.</li>
+            <li>Reads arriving that way are marked <code>channel: "resale"</code> in both the response and the receipt.</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ────────────────────────────── LIMITS ────────────────────────────── -->
+  <section>
+    <div class="wrap">
+      <p class="lbl">// stated plainly</p>
+      <h2 class="sec">What this does not do.</h2>
+      <p class="lede">The refusal rule would be worth very little coming from a project that oversells everything else.</p>
+      <ul class="limits">
+        <li><b>No source has opted in</b><span>Payout addresses in the registry are stand-ins. The routing works; the consent is not real yet.</span></li>
+        <li><b>The operator judges disputes</b><span>The refund path and the slashing arithmetic are real. The judge is not decentralised.</span></li>
+        <li><b>Testnet only</b><span>Hedera testnet HBAR, a testnet facilitator, and a testnet <code>SourcePayouts</code> deployment.</span></li>
+        <li><b>Resale reads are operator-funded</b><span>Bazantic collects upstream in another currency; sources are still paid in HBAR out of our own float.</span></li>
+        <li><b>Refusal cannot be bought around</b><span>A caller may tighten a freshness bound. Nothing a caller sends can loosen one past the family policy.</span></li>
+      </ul>
+    </div>
+  </section>
+</main>
+
+<footer>
+  <div class="wrap">
+    <p class="lbl">// api surface</p>
+    <div class="ep">
+      <div><code>GET /v1/reads/:family</code><span>The gate. <code>402</code> unpaid · <code>409</code> refused and uncharged · <code>200</code> with an answer and a signed receipt.</span></div>
+      <div><code>GET /v1/registry</code><span>The conformance registry. Adding a protocol is one JSON entry and zero code.</span></div>
+      <div><code>GET /v1/policy/:family</code><span>The freshness policy and the metrics a family exposes.</span></div>
+      <div><code>GET /v1/receipts/:digest</code><span>The signed evidence behind an answer, plus how to re-derive it.</span></div>
+      <div><code>GET /v1/payouts</code><span>Per source: earned, cleared, still slashable, already slashed.</span></div>
+      <div><code>POST /v1/disputes</code><span>Refund a disproved read out of unvested holdback.</span></div>
+      <div><code>GET /openapi.json</code><span>The machine-readable contract this service is listed from.</span></div>
+    </div>
+    <div class="curl" id="curl">curl -i "http://localhost:8787/v1/reads/aave-v3-ethereum?metric=supplyAPY&amp;asset=USDC"</div>
+    An MCP server ships alongside this, so an agent can hold the same paywalled read as a tool.
+    Built for ETHOnline · MIT licensed.
+    <div class="sig">
+      <img src="/assets/sourcemark-icon-light.svg?v=2" alt="" />
+      <span class="wm">source<i>mark</i></span>
+      <span class="faint">· every answer names its sources, or there is no answer</span>
+    </div>
+  </div>
+</footer>
+
+<script>
+'use strict';
+
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+const ACTIONS = ['b402', 'bpay', 'bstale', 'bresale'];
+
+let HEALTH = null;
+let REGISTRY = null;
+
+/* ── formatting ─────────────────────────────────────────────────────────────
+   Values span APYs near 0.04 and TVLs in the billions, so a fixed number of
+   decimals is wrong at one end or the other. */
+function num(v, digits = 6) {
+  if (v === null || v === undefined || v === '') return '—';
+  const n = Number(v);
+  if (!Number.isFinite(n)) return esc(v);
+  if (n !== 0 && Math.abs(n) < 0.001) return n.toExponential(3);
+  if (Math.abs(n) >= 1e6) return n.toLocaleString('en-US', { maximumFractionDigits: 0 });
+  return String(Number(n.toPrecision(digits)));
+}
+
+/** Tinybar is 1e-8 HBAR. Raw tinybar alone makes the split unreadable. */
+function hbar(tinybar) {
+  if (tinybar === null || tinybar === undefined) return '—';
+  const n = Number(tinybar);
+  if (!Number.isFinite(n)) return esc(tinybar);
+  return (n / 1e8).toFixed(5).replace(/0+$/, '').replace(/\.$/, '') + ' ℏ';
+}
+
+function short(s, head = 10, tail = 6) {
+  const v = String(s ?? '');
+  return v.length <= head + tail + 1 ? v : v.slice(0, head) + '…' + v.slice(-tail);
+}
+
+function duration(seconds) {
+  const s = Number(seconds);
+  if (!Number.isFinite(s)) return '—';
+  if (s % 86400 === 0) return s / 86400 + 'd';
+  if (s % 3600 === 0) return s / 3600 + 'h';
+  return s + 's';
+}
+
+/**
+ * A payee cell.
+ *
+ * Payout summaries carry whichever address was recorded when a source first
+ * earned, so an entry from before the registry was filled in still reports a
+ * `<FILL: …>` placeholder. Rendering that as though it were an address invites
+ * the reader to think we are paying somewhere real, so it is labelled instead.
+ */
+function payee(addr) {
+  const v = String(addr ?? '');
+  if (!v || v === 'unassigned' || v.startsWith('<FILL:')) {
+    return '<td class="warn" title="' + esc(v) + '">unassigned</td>';
+  }
+  return '<td class="faint" title="' + esc(v) + '">' + esc(short(v, 10, 6)) + '</td>';
+}
+
+function tag(label, value, state) {
+  return '<span class="tag">' + (state ? '<span class="led ' + state + '"></span>' : '') +
+         esc(label) + ' <b>' + value + '</b></span>';
+}
+
+async function api(path, opts) {
+  const res = await fetch(path, opts);
+  const body = await res.json().catch(() => null);
+  return { status: res.status, ok: res.ok, body };
+}
+
+function busy(on, label) {
+  ACTIONS.forEach((b) => { $(b).disabled = on; });
+  if (on) {
+    $('rsp').innerHTML = '';
+    $('result').innerHTML = '<div class="placeholder">' + esc(label) + '</div>';
+  }
+}
+
+function raw(obj, label) {
+  return '<details class="raw"><summary>' + esc(label || 'raw json') + '</summary><pre>' +
+         esc(JSON.stringify(obj, null, 2)) + '</pre></details>';
+}
+
+/* ── boot ───────────────────────────────────────────────────────────────── */
+
+async function boot() {
+  const [h, r, p] = await Promise.all([api('/health'), api('/v1/registry'), api('/v1/payouts')]);
+  HEALTH = h.body;
+  REGISTRY = r.body;
+
+  if (!HEALTH) {
+    $('navled').className = 'led bad';
+    $('navnet').textContent = 'unreachable';
+    $('evidence').innerHTML = '<div class="ev"><div class="k">service</div><div class="v">offline</div></div>';
+    return;
+  }
+
+  $('navled').className = 'led up';
+  $('navnet').textContent = (HEALTH.x402 && HEALTH.x402.network) || 'hedera testnet';
+  renderEvidence(p.body);
+  renderFamilies();
+  loadTab('registry');
+}
+
+/**
+ * The hero strip.
+ *
+ * Every figure is read from the service at load rather than written into the
+ * markup — a page that advertises verifiable reads should not be asserting its
+ * own numbers.
+ */
+function renderEvidence(payouts) {
+  const h = HEALTH;
+  const fams = (REGISTRY && REGISTRY.families) || [];
+  const pinned = fams.reduce((sum, f) => sum + f.sources.filter((s) => s.pinned).length, 0);
+  const ready = fams.filter((f) => f.ready).length;
+  const routed = ((payouts && payouts.sources) || []).reduce((sum, s) => sum + BigInt(s.earned || 0), 0n);
+
+  const cells = [
+    ['price / read', hbar(h.x402 && h.x402.price), (h.x402 && h.x402.network) || ''],
+    ['a refusal costs', '0 ℏ', 'verified, then deliberately unsettled', 'free'],
+    ['pinned sources', String(pinned), ready + ' of ' + fams.length + ' families at quorum'],
+    ['held back', h.split ? h.split.holdbackBps / 100 + '%' : '—',
+      h.split ? 'unvested ' + duration(h.split.holdbackVestingSeconds) + ' · slashable' : ''],
+    ['routed to sources', hbar(routed.toString()), 'across every settled read'],
+  ];
+
+  $('evidence').innerHTML = cells.map((c) =>
+    '<div class="ev' + (c[3] ? ' ' + c[3] : '') + '"><div class="k">' + esc(c[0]) + '</div>' +
+    '<div class="v">' + esc(c[1]) + '</div>' +
+    '<div class="n">' + esc(c[2]) + '</div></div>').join('');
+}
+
+function renderFamilies() {
+  const fams = (REGISTRY && REGISTRY.families) || [];
+  $('family').innerHTML = fams.map((f) =>
+    '<option value="' + esc(f.family) + '">' + esc(f.family) + (f.ready ? '' : ' (unpinned)') + '</option>').join('');
+  $('family').onchange = onFamilyChange;
+  onFamilyChange();
+}
+
+function selectedFamily() {
+  const name = $('family').value;
+  return ((REGISTRY && REGISTRY.families) || []).find((f) => f.family === name) || null;
+}
+
+function onFamilyChange() {
+  const f = selectedFamily();
+  if (!f) return;
+  $('metric').innerHTML = f.metrics.map((m) => '<option value="' + esc(m) + '">' + esc(m) + '</option>').join('');
+
+  // Comparability changes what a family's numbers mean, so it belongs next to
+  // the query: `identical` sources disagreeing is a fault, `peer` sources
+  // disagreeing is the market.
+  $('qmeta').innerHTML = [
+    tag('sources', f.sources.filter((s) => s.pinned).length + ' pinned', 'ok'),
+    tag('quorum', f.policy.minSources, 'ok'),
+    tag('max lag', f.policy.maxBlockLag + ' blk', 'ok'),
+    tag('max age', f.policy.maxAgeSeconds + 's', 'ok'),
+    tag(f.comparability, f.comparability === 'identical'
+      ? 'match within ' + ((f.agreementToleranceBps ?? 100) / 100) + '%'
+      : 'spread expected', f.comparability === 'identical' ? 'ok' : 'warn'),
+  ].join('');
+  updateCurl();
+}
+
+function query() {
+  return {
+    family: $('family').value,
+    metric: $('metric').value,
+    asset: $('asset').value.trim() || undefined,
+  };
+}
+
+function readPath(extra) {
+  const q = query();
+  const p = new URLSearchParams({ metric: q.metric });
+  if (q.asset) p.set('asset', q.asset);
+  if (extra) Object.entries(extra).forEach(([k, v]) => p.set(k, String(v)));
+  return '/v1/reads/' + encodeURIComponent(q.family) + '?' + p.toString();
+}
+
+function updateCurl() {
+  $('curl').textContent = 'curl -i "' + location.origin + readPath() + '"';
+}
+$('metric').addEventListener('change', updateCurl);
+$('asset').addEventListener('input', updateCurl);
+
+/* ── renderers ──────────────────────────────────────────────────────────── */
+
+function traceList(trace) {
+  if (!Array.isArray(trace) || !trace.length) return '';
+  return '<ul class="trace">' + trace.map((s) =>
+    '<li><span class="mark2 ' + (s.ok ? 'ok' : 'bad') + '">' + (s.ok ? '✓' : '✗') + '</span>' +
+    '<span class="name">' + esc(s.step) + '</span>' +
+    '<span class="txt">' + esc(s.detail) + '</span></li>').join('') + '</ul>';
+}
+
+function answerCard(a) {
+  if (!a) return '';
+  let html = '<div class="answer"><span class="v">' + num(a.value) + '</span><span class="u">' + esc(a.unit) + '</span>' +
+    '<span class="tags">' +
+      tag('method', esc(a.method) + ' of ' + a.contributors) +
+      (a.spreadBps !== null && a.spreadBps !== undefined ? tag('spread', a.spreadBps + ' bps') : '') +
+      tag('sources', esc(a.comparability)) +
+    '</span></div>';
+
+  // On a peer family the headline summarises different protocols, so showing it
+  // without the range it was drawn from would be false precision.
+  if (a.range) {
+    html += '<div class="banner hold"><strong>Range across sources</strong> — ' +
+      num(a.range.min, 4) + ' ' + esc(a.unit) + ' (' + esc(a.range.minProtocol) + ') to ' +
+      num(a.range.max, 4) + ' ' + esc(a.unit) + ' (' + esc(a.range.maxProtocol) + ')' +
+      (a.caveat ? '<span class="s">' + esc(a.caveat) + '</span>' : '') + '</div>';
+  }
+  return html;
+}
+
+function sourcesTable(sources) {
+  if (!Array.isArray(sources) || !sources.length) return '';
+  const rows = sources.map((s) => {
+    const okRow = s.status === 'OK';
+    const note = okRow ? 'within policy' : (s.why || '') + (s.detail ? ' — ' + s.detail : '');
+    return '<tr>' +
+      '<td class="' + (okRow ? 'st-ok' : 'st-no') + '">' + esc(s.status) + '</td>' +
+      '<td>' + esc(s.protocol) + '</td>' +
+      '<td class="faint" title="' + esc(s.deploymentId) + '">' + esc(short(s.deploymentId, 12, 5)) + '</td>' +
+      '<td class="num">' + (s.block ?? '—') + '</td>' +
+      '<td class="num ' + (s.blockLag === 0 ? 'ok' : '') + '">' + (s.blockLag ?? '—') + '</td>' +
+      '<td class="num">' + (s.ageSeconds !== null && s.ageSeconds !== undefined ? s.ageSeconds + 's' : '—') + '</td>' +
+      '<td class="num">' + num(s.value) + '</td>' +
+      '<td class="num faint">' + (s.weightUSD ? '$' + num(s.weightUSD, 4) : '—') + '</td>' +
+      '<td class="num faint">' + (s.latencyMs !== undefined ? s.latencyMs + 'ms' : '—') + '</td>' +
+      '<td class="wrap">' + esc(note) + '</td>' +
+      '</tr>';
+  }).join('');
+  return '<div class="tbl"><table><thead><tr>' +
+    '<th>status</th><th>protocol</th><th>pinned deployment</th><th class="num">block</th>' +
+    '<th class="num">lag</th><th class="num">age</th><th class="num">value</th>' +
+    '<th class="num">market tvl</th><th class="num">latency</th><th>note</th>' +
+    '</tr></thead><tbody>' + rows + '</tbody></table></div>';
+}
+
+function paymentBanner(p) {
+  if (!p) return '';
+  if (p.channel === 'resale') {
+    return '<div class="banner info"><strong>Billed upstream by ' + esc(p.via) + '</strong> — priced at ' +
+      hbar(p.amount) + ' here, but collected by ' + esc(p.via) + ' in its own currency on its own chain.' +
+      '<span class="s">' + esc(p.note || '') + '</span></div>';
+  }
+  if (p.transaction) {
+    return '<div class="banner good"><strong>Settled ' + hbar(p.amount) + '</strong> on ' + esc(p.network) +
+      (p.payer ? ' from <code>' + esc(p.payer) + '</code>' : '') +
+      (p.explorer ? ' — <a href="' + esc(p.explorer) + '" target="_blank" rel="noopener">view on HashScan</a>' : '') +
+      '<span class="s">Money moved only after the read passed the policy, never before.</span></div>';
+  }
+  if (p.mode === 'free') {
+    return '<div class="banner info">PAYMENT_MODE=free — the read layer without the paywall.</div>';
+  }
+  return '';
+}
+
+function receiptBox(r) {
+  if (!r || !r.digest) return '';
+  return '<div class="banner hold"><strong>Signed receipt</strong> <code>' + esc(short(r.digest, 18, 8)) + '</code>' +
+    (r.signer ? '<span class="s">Signed by <code>' + esc(r.signer) + '</code> over the answer, every source, its block, and the policy that admitted it.</span>' : '') +
+    '<div class="btnrow">' +
+      '<button class="ghost sm" onclick="verifyReceipt(\'' + esc(r.digest) + '\')">Fetch &amp; verify receipt</button>' +
+      '<button class="ghost sm" onclick="disputeReceipt(\'' + esc(r.digest) + '\')">Dispute it · slash the holdback</button>' +
+    '</div></div>';
+}
+
+/* The split is what distinguishes this from a subgraph behind a paywall, so it
+   gets its own block rather than living in the raw JSON. */
+function payoutBox(payout) {
+  if (!payout || !payout.shares || !payout.shares.length) return '';
+
+  const rows = payout.shares.map((s) =>
+    '<tr><td>' + esc(s.protocol) + '</td>' +
+    '<td class="num">' + hbar(s.amount) + '</td>' +
+    '<td class="num ok">' + hbar(s.vested) + '</td>' +
+    '<td class="num warn">' + hbar(s.heldBack) + '</td>' +
+    payee(s.payoutAddress) + '</tr>').join('');
+
+  let html = '<div class="block"><div class="blockhead">Revenue split <span>· ' +
+    hbar(payout.gross) + ' gross · ' + hbar(payout.routingFee) + ' routing fee (' +
+    (payout.routingFeeBps / 100) + '%) · ' + (payout.holdbackBps / 100) + '% held back for ' +
+    duration(payout.holdbackVestingSeconds) +
+    (Number(payout.dust) ? ' · ' + payout.dust + ' tinybar dust to operator' : '') + '</span></div>' +
+    '<div class="tbl"><table><thead><tr><th>source</th><th class="num">earned</th>' +
+    '<th class="num">cleared</th><th class="num">held back</th><th>payee</th>' +
+    '</tr></thead><tbody>' + rows + '</tbody></table></div>';
+
+  if (payout.onchain && payout.onchain.transaction) {
+    html += '<div class="banner good"><strong>Split recorded onchain</strong> in <code>SourcePayouts</code> — ' +
+      '<a href="' + esc(payout.onchain.explorer) + '" target="_blank" rel="noopener">view on HashScan</a>' +
+      '<span class="s">The held-back slice is unvested and slashable if this receipt is later disproved. ' +
+      'Payout addresses are stand-ins — no source has opted in.</span></div>';
+  } else {
+    html += '<div class="banner hold">Recorded in the local ledger only (<code>SPLIT_MODE=ledger</code>). ' +
+      'Set <code>SPLIT_MODE=onchain</code> to have the contract enforce this.</div>';
+  }
+  return html + '</div>';
+}
+
+function refusalBox(b) {
+  return '<div class="banner hold"><strong>409 REFUSED — ' + esc(b.reason) + '</strong>' +
+    '<span class="s">' + esc(b.detail || '') + '</span>' +
+    (b.survived !== undefined ? '<span class="s">' + b.survived + ' of ' + b.required +
+      ' required sources satisfied the policy.</span>' : '') +
+    '<span class="s"><strong>' + esc(b.note || '') + '</strong></span></div>' + sourcesTable(b.sources);
+}
+
+/**
+ * A refusal by the *demo harness* rather than by the gate.
+ *
+ * These have to read differently from a 409: a rate limit says nothing about
+ * the data, and a reader who has just been told refusals are meaningful should
+ * not have to wonder which kind of "no" this was.
+ */
+function harnessError(status, body) {
+  const b = body || {};
+  const wait = b.retryAfterMs ? Math.ceil(b.retryAfterMs / 1000) + 's' : null;
+  return '<div class="banner err"><strong>' + esc(b.error || 'HTTP ' + status) + '</strong>' +
+    '<span class="s">' + esc(b.detail || '') + '</span>' +
+    (wait ? '<span class="s">Try again in about ' + wait + '.</span>' : '') +
+    (b.hint ? '<span class="s">' + esc(b.hint) + '</span>' : '') +
+    (status === 429
+      ? '<span class="s">This is the demo harness protecting its own funds, not the provenance gate refusing a read.</span>'
+      : '') + '</div>';
+}
+
+function statusPill(status) {
+  const state = status === 200 ? 'ok' : status === 402 || status === 409 ? 'warn' : 'bad';
+  return '<span class="tag"><span class="led ' + state + '"></span>http <b>' + status + '</b></span>';
+}
+
+function answerView(b) {
+  return answerCard(b.answer) + sourcesTable(b.sources) + paymentBanner(b.payment) +
+         receiptBox(b.receipt) + payoutBox(b.payout);
+}
+
+/* ── the four actions ───────────────────────────────────────────────────── */
+
+$('b402').onclick = async () => {
+  busy(true, 'requesting a read with no payment attached…');
+  try {
+    const r = await api(readPath());
+    $('rsp').innerHTML = statusPill(r.status);
+    const req = (r.body && r.body.accepts && r.body.accepts[0]) || null;
+    let html = r.status === 402
+      ? '<div class="banner good"><strong>402 Payment Required</strong> — the paywall is real, and it told you exactly how to satisfy it.' +
+        (req ? '<span class="s">' + hbar(req.amount) + ' on <code>' + esc(req.network) + '</code> to <code>' +
+          esc(req.payTo) + '</code> · scheme <code>' + esc(req.scheme) + '</code></span>' : '') +
+        '<span class="s">No API key, no account, no signup — the challenge itself is the onboarding.</span></div>'
+      : '<div class="banner err">HTTP ' + r.status + ' — expected 402 here.</div>';
+    if (r.body && r.body.policy) {
+      html += '<div class="banner info">The challenge also carries the policy it will be judged against: quorum <strong>' +
+        r.body.policy.minSources + '</strong>, max lag <strong>' + r.body.policy.maxBlockLag +
+        '</strong> blocks, max age <strong>' + r.body.policy.maxAgeSeconds + '</strong>s.</div>';
+    }
+    $('result').innerHTML = html + raw(r.body, 'raw 402 challenge');
+  } catch (e) {
+    $('result').innerHTML = '<div class="banner err">' + esc(e.message) + '</div>';
+  }
+  busy(false);
+};
+
+async function runAgent(strictAge) {
+  busy(true, strictAge !== undefined
+    ? 'paying, then demanding freshness no source can meet…'
+    : 'agent is taking a 402, signing a Hedera transfer, and retrying…');
+  try {
+    const q = query();
+    if (strictAge !== undefined) q.strictAge = strictAge;
+    const r = await api('/demo/run', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(q),
+    });
+    const run = r.body || {};
+    if (r.status !== 200) {
+      $('rsp').innerHTML = statusPill(r.status);
+      $('result').innerHTML = harnessError(r.status, run);
+      busy(false);
+      return;
+    }
+    $('rsp').innerHTML = statusPill(run.status);
+    let html = traceList(run.trace);
+    if (run.status === 409) html += refusalBox(run.body || {});
+    else if (run.body && run.body.answer) html += answerView(run.body);
+    else if (run.body) html += '<div class="banner err">HTTP ' + run.status + ' — ' + esc(run.body.error || 'unexpected') +
+      '<span class="s">' + esc(run.body.detail || run.body.note || '') + '</span></div>';
+    $('result').innerHTML = html + raw(run.body ?? run.challenge, 'raw response body');
+  } catch (e) {
+    $('result').innerHTML = '<div class="banner err">' + esc(e.message) + '</div>';
+  }
+  busy(false);
+}
+
+$('bpay').onclick = () => runAgent(undefined);
+$('bstale').onclick = () => runAgent(1);
+
+$('bresale').onclick = async () => {
+  busy(true, 'calling the gate the way the Bazantic gateway does…');
+  try {
+    const r = await api('/demo/resale', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(query()),
+    });
+    const run = r.body || {};
+    if (r.status !== 200) {
+      $('rsp').innerHTML = statusPill(r.status);
+      $('result').innerHTML = harnessError(r.status, run);
+      busy(false);
+      return;
+    }
+    $('rsp').innerHTML = statusPill(run.status);
+
+    // Be exact about what this proves. It is the same credential check, gate and
+    // split that Bazantic's gateway hits — but the request did not traverse
+    // their gateway, so it does not prove they billed anybody.
+    let html = '<div class="banner info"><strong>Requested with the shared resale credential, server-side</strong>' +
+      '<span class="s">The browser cannot hold this secret — publishing it would publish the bypass — so the demo ' +
+      'presents it from the server. Identical credential check, provenance gate, refusal rule and onchain split to a ' +
+      'request arriving through <code>' + esc(run.via || 'the reseller') + '</code>. What it does not exercise is their ' +
+      'billing leg, which runs against the public URL.</span></div>';
+
+    if (run.status === 409) html += refusalBox(run.body || {});
+    else if (run.body && run.body.answer) html += answerView(run.body);
+    else html += '<div class="banner err">HTTP ' + run.status + ' — ' +
+      esc((run.body && (run.body.error || run.body.detail)) || 'unexpected') + '</div>';
+    $('result').innerHTML = html + raw(run.body, 'raw response body');
+  } catch (e) {
+    $('result').innerHTML = '<div class="banner err">' + esc(e.message) + '</div>';
+  }
+  busy(false);
+};
+
+/* ── receipts and disputes ──────────────────────────────────────────────── */
+
+window.verifyReceipt = async function (digest) {
+  const r = await api('/v1/receipts/' + encodeURIComponent(digest));
+  if (!r.ok) {
+    $('result').insertAdjacentHTML('beforeend',
+      '<div class="banner err">Receipt not found: <code>' + esc(digest) + '</code></div>');
+    return;
+  }
+  const rec = r.body.receipt;
+  $('result').insertAdjacentHTML('beforeend',
+    '<div class="block"><div class="blockhead">Receipt as served <span>· GET /v1/receipts/' + esc(short(digest, 10, 6)) + '</span></div>' +
+    '<div class="banner good"><strong>Retrieved and self-describing</strong>' +
+    '<span class="s">Answer hash <code>' + esc(short(rec.body.answerHash || '—', 14, 8)) + '</code> · ' +
+    (rec.body.sources || []).length + ' sources pinned at their answering block · signer <code>' +
+    esc(short(rec.signer, 8, 6)) + '</code></span></div>' +
+    '<div class="banner info"><strong>How anyone re-checks it</strong>' +
+    (r.body.howToVerify || []).map((s) => '<span class="s">· ' + esc(s) + '</span>').join('') + '</div>' +
+    raw(r.body, 'full signed receipt') + '</div>');
+};
+
+window.disputeReceipt = async function (digest) {
+  const r = await api('/v1/disputes', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ digest, claimant: 'demo-page', reason: 'demo: claiming this read was not reproducible' }),
+  });
+  if (!r.ok) {
+    $('result').insertAdjacentHTML('beforeend',
+      '<div class="banner err">Dispute failed: ' + esc((r.body && r.body.detail) || r.status) + '</div>');
+    return;
+  }
+  const d = r.body.dispute;
+  $('result').insertAdjacentHTML('beforeend',
+    '<div class="block"><div class="blockhead">Dispute upheld <span>· POST /v1/disputes</span></div>' +
+    '<div class="banner err"><strong>' + hbar(d.refunded) + ' refunded, slashed from ' + d.chargedTo.length +
+    ' source' + (d.chargedTo.length === 1 ? '' : 's') + '</strong>' +
+    '<span class="s">' + esc(r.body.note || '') + '</span>' +
+    '<span class="s">No source ever posted collateral. The penalty comes out of revenue already earned but not ' +
+    'yet cleared, so a source that keeps serving stale data simply earns less and eventually nothing.</span>' +
+    '<span class="s">This writes to the local ledger — open the <strong>Payouts</strong> tab to see the balance drop.</span></div>' +
+    raw(r.body, 'raw dispute record') + '</div>');
+  if (currentTab === 'payouts') loadTab('payouts');
+};
+
+/* ── explorer tabs ──────────────────────────────────────────────────────── */
+
+let currentTab = 'registry';
+
+$('tabs').addEventListener('click', (e) => {
+  const btn = e.target.closest('.tab');
+  if (btn) loadTab(btn.dataset.tab);
+});
+
+async function loadTab(name) {
+  currentTab = name;
+  [...document.querySelectorAll('.tab')].forEach((t) => t.classList.toggle('on', t.dataset.tab === name));
+  $('tabbody').innerHTML = '<div class="placeholder">loading…</div>';
+  try {
+    $('tabbody').innerHTML = await TABS[name]();
+  } catch (e) {
+    $('tabbody').innerHTML = '<div class="banner err">' + esc(e.message) + '</div>';
+  }
+}
+
+const TABS = {
+  async registry() {
+    const r = await api('/v1/registry');
+    const b = r.body;
+    let html = '<div class="banner info">' + esc(b.note || '') +
+      '<span class="s"><strong>' + esc(b.howToExtend) + '</strong></span></div>';
+
+    for (const f of b.families) {
+      const rows = f.sources.map((s) =>
+        '<tr><td>' + esc(s.protocol) + '</td><td class="num faint">' + s.chainId + '</td>' +
+        '<td class="' + (s.pinned ? 'dim' : 'bad') + '" title="' + esc(s.id) + '">' + esc(short(s.id, 20, 6)) + '</td>' +
+        '<td class="' + (s.pinned ? 'st-ok' : 'st-no') + '">' + (s.pinned ? 'pinned' : 'UNPINNED') + '</td></tr>').join('');
+
+      html += '<div class="block"><div class="blockhead"><b>' + esc(f.family) +
+        '</b> <span>· ' + esc(f.label) + '</span></div>' +
+        '<div class="qmeta" style="justify-content:flex-start;margin:0 0 14px">' +
+          tag('status', f.ready ? 'ready' : 'below quorum', f.ready ? 'ok' : 'bad') +
+          tag('comparability', esc(f.comparability), f.comparability === 'identical' ? 'ok' : 'warn') +
+          tag('quorum', f.policy.minSources, 'ok') +
+          tag('metrics', esc(f.metrics.join(', ')), 'ok') +
+          (f.schemaIpfsHash ? tag('schema hash', esc(short(f.schemaIpfsHash, 10, 6)), 'ok') : '') +
+        '</div>' +
+        (f.comparabilityNote ? '<div class="banner info">' + esc(f.comparabilityNote) + '</div>' : '') +
+        '<div class="tbl"><table><thead><tr><th>protocol</th><th class="num">chain</th>' +
+        '<th>deployment id</th><th>state</th></tr></thead><tbody>' + rows + '</tbody></table></div></div>';
+    }
+    return html + raw(b, 'GET /v1/registry');
+  },
+
+  async policy() {
+    const fam = $('family').value;
+    const r = await api('/v1/policy/' + encodeURIComponent(fam));
+    const b = r.body;
+    if (!r.ok) return '<div class="banner err">' + esc(b && b.error) + '</div>';
+
+    const metrics = Object.entries(b.metrics).map(([name, spec]) =>
+      '<tr><td>' + esc(name) + '</td><td>' + esc(spec.unit) + '</td><td>' + esc(spec.kind) + '</td>' +
+      '<td class="faint">' + esc(spec.field || [spec.side, spec.type].filter(Boolean).join(' · ')) + '</td></tr>').join('');
+
+    return '<div class="banner info"><strong>' + esc(b.label) + '</strong>' +
+      '<span class="s">Schema <code>' + esc(b.schema) + '</code>' +
+      (b.schemaUrl ? ' — <a href="' + esc(b.schemaUrl) + '" target="_blank" rel="noopener">read it</a>' : '') + '</span>' +
+      '<span class="s">Showing the family selected in the console above. A caller may tighten any bound below; ' +
+      'nothing a caller sends can loosen one.</span></div>' +
+      '<div class="qmeta" style="justify-content:flex-start;margin:0 0 14px">' +
+        tag('max block lag', b.policy.maxBlockLag, 'ok') +
+        tag('max age', b.policy.maxAgeSeconds + 's', 'ok') +
+        tag('min sources', b.policy.minSources, 'ok') +
+        tag('registered sources', b.sources, 'ok') +
+      '</div>' +
+      '<div class="tbl"><table><thead><tr><th>metric</th><th>unit</th><th>kind</th><th>derived from</th>' +
+      '</tr></thead><tbody>' + metrics + '</tbody></table></div>' + raw(b, 'GET /v1/policy/' + fam);
+  },
+
+  async payouts() {
+    const r = await api('/v1/payouts');
+    const b = r.body;
+    if (!b.sources || !b.sources.length) {
+      return '<div class="banner info"><strong>No settled reads yet</strong>' +
+        '<span class="s">Run the buying agent in the console above. Each paid read credits the sources that ' +
+        'answered it, and this table fills in.</span></div>';
+    }
+    const rows = b.sources.map((s) =>
+      '<tr><td>' + esc(s.protocol) + '</td><td class="num">' + s.reads + '</td>' +
+      '<td class="num">' + hbar(s.earned) + '</td>' +
+      '<td class="num ok">' + hbar(s.vested) + '</td>' +
+      '<td class="num warn">' + hbar(s.unvestedHoldback) + '</td>' +
+      '<td class="num ' + (Number(s.slashed) ? 'bad' : 'faint') + '">' + hbar(s.slashed) + '</td>' +
+      payee(s.payoutAddress) + '</tr>').join('');
+
+    return '<div class="qmeta" style="justify-content:flex-start;margin:0 0 14px">' +
+        tag('mode', esc(b.mode), b.mode === 'onchain' ? 'ok' : 'warn') +
+        tag('routing fee', (b.routingFeeBps / 100) + '%', 'ok') +
+        tag('holdback', (b.holdbackBps / 100) + '%', 'ok') +
+        tag('vesting', duration(b.holdbackVestingSeconds), 'ok') +
+      '</div>' +
+      '<div class="tbl"><table><thead><tr><th>source</th><th class="num">reads</th><th class="num">earned</th>' +
+      '<th class="num">cleared</th><th class="num">slashable</th><th class="num">slashed</th><th>payee</th>' +
+      '</tr></thead><tbody>' + rows + '</tbody></table></div>' +
+      '<div class="banner hold">' + esc(b.note) + '</div>' + raw(b, 'GET /v1/payouts');
+  },
+
+  async disputes() {
+    const r = await api('/v1/disputes');
+    const list = (r.body && r.body.disputes) || [];
+    if (!list.length) {
+      return '<div class="banner info"><strong>No disputes filed</strong>' +
+        '<span class="s">Pay for a read above, then use <strong>Dispute it · slash the holdback</strong> on the ' +
+        'receipt to watch a refund come out of unvested revenue.</span></div>';
+    }
+    const rows = list.map((d) =>
+      '<tr><td class="faint">' + new Date(d.ts * 1000).toISOString().replace('T', ' ').slice(0, 19) + '</td>' +
+      '<td class="faint" title="' + esc(d.digest) + '">' + esc(short(d.digest, 10, 6)) + '</td>' +
+      '<td>' + esc(d.claimant) + '</td>' +
+      '<td class="' + (d.status === 'UPHELD' ? 'st-no' : 'dim') + '">' + esc(d.status) + '</td>' +
+      '<td class="num">' + hbar(d.refunded) + '</td>' +
+      '<td class="num faint">' + d.chargedTo.length + '</td>' +
+      '<td class="wrap">' + esc(d.reason) + '</td></tr>').join('');
+    return '<div class="tbl"><table><thead><tr><th>filed</th><th>receipt</th><th>claimant</th><th>status</th>' +
+      '<th class="num">refunded</th><th class="num">sources charged</th><th>reason</th>' +
+      '</tr></thead><tbody>' + rows + '</tbody></table></div>' + raw(r.body, 'GET /v1/disputes');
+  },
+
+  async health() {
+    const r = await api('/health');
+    const h = r.body;
+    const warn = (h.warnings || []).length
+      ? '<div class="banner hold"><strong>Configuration warnings</strong>' +
+        h.warnings.map((w) => '<span class="s">· ' + esc(w) + '</span>').join('') + '</div>'
+      : '<div class="banner good"><strong>Fully configured</strong>' +
+        '<span class="s">No warnings: a live Graph key, a payable x402 challenge, and signed receipts.</span></div>';
+    return warn +
+      '<div class="qmeta" style="justify-content:flex-start;margin:0 0 14px">' +
+        tag('payment', esc(h.modes.payment), h.modes.payment === 'x402' ? 'ok' : 'warn') +
+        tag('facilitator', h.x402.reachable ? 'reachable' : 'unreachable', h.x402.reachable ? 'ok' : 'bad') +
+        tag('graph key', h.graph.apiKeyConfigured ? 'set' : 'missing', h.graph.apiKeyConfigured ? 'ok' : 'bad') +
+        tag('split', esc(h.modes.split), h.modes.split === 'onchain' ? 'ok' : 'warn') +
+        (h.resale ? tag('resale', h.resale.enabled ? h.resale.label : 'disabled', h.resale.enabled ? 'ok' : 'warn') : '') +
+        (h.receipts && h.receipts.signer ? tag('receipt signer', esc(short(h.receipts.signer, 8, 6)), 'ok') : '') +
+      '</div>' +
+      (h.split && h.split.contract
+        ? '<div class="banner good"><strong>Payout contract</strong> <code>' + esc(h.split.contract) + '</code>' +
+          ' — <a href="' + esc(h.split.explorer) + '" target="_blank" rel="noopener">view on HashScan</a>' +
+          '<span class="s">Routing fee ' + (h.split.routingFeeBps / 100) + '%, holdback ' +
+          (h.split.holdbackBps / 100) + '% unvested for ' + duration(h.split.holdbackVestingSeconds) + '.</span></div>'
+        : '') +
+      '<div class="banner info"><strong>The facilitator advertises</strong>' +
+      '<span class="s">' + (h.x402.advertisedNetworks || []).map((n) => '<code>' + esc(n) + '</code>').join(' · ') +
+      '</span><span class="s">We price in <code>' + esc(h.x402.network) + '</code>, which is why a buyer settling in ' +
+      'USDC on Base has to arrive through the resale channel instead.</span></div>' +
+      raw(h, 'GET /health');
+  },
+};
+
+boot();
+</script>
+</body>
+</html>
