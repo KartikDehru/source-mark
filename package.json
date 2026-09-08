@@ -1,0 +1,45 @@
+{
+  "name": "sourcemark",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "A paid read layer for onchain data that refuses to answer when it cannot prove provenance, pays the sources that answered, and slashes the ones that lie.",
+  "license": "MIT",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "start": "tsx src/index.ts",
+    "typecheck": "tsc --noEmit",
+    "registry:doctor": "tsx scripts/registry-doctor.ts",
+    "pay": "tsx client/pay.ts",
+    "agent": "tsx agent/loop.ts",
+    "test": "node --test --import tsx test/*.test.ts && hardhat test",
+    "discover": "tsx scripts/discover.ts",
+    "hedera:doctor": "tsx scripts/hedera-doctor.ts",
+    "mcp:smoke": "tsx scripts/mcp-smoke.ts",
+    "contracts:build": "hardhat compile",
+    "contracts:test": "hardhat compile && tsc -p tsconfig.contracts.json --noEmit && hardhat test",
+    "contracts:typecheck": "tsc -p tsconfig.contracts.json --noEmit",
+    "payouts:deploy": "hardhat run scripts/deploy-payouts.ts --network hederaTestnet",
+    "payouts:status": "tsx scripts/payouts-status.ts",
+    "tunnel": "tsx scripts/tunnel.ts"
+  },
+  "dependencies": {
+    "@hono/node-server": "^1.15.0",
+    "@modelcontextprotocol/sdk": "^1.30.0",
+    "@x402/hedera": "^2.25.0",
+    "dotenv": "^16.4.7",
+    "hono": "^4.13.7",
+    "viem": "^2.56.3",
+    "zod": "^4.5.4"
+  },
+  "devDependencies": {
+    "@nomicfoundation/hardhat-toolbox-viem": "^5.0.7",
+    "@types/node": "^22.10.0",
+    "hardhat": "^3.16.0",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2"
+  }
+}
