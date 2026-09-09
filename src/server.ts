@@ -817,17 +817,18 @@ app.post('/v1/consent', async (c) => {
  */
 app.get('/assets/:file', (c) => {
   const name = c.req.param('file');
-  if (!/^[a-z0-9][a-z0-9._-]*\.svg$/i.test(name) || name.includes('..')) {
+  if (!/^[a-z0-9][a-z0-9._-]*\.(svg|png)$/i.test(name) || name.includes('..')) {
     return c.json({ error: 'NOT_FOUND' }, 404);
   }
   try {
-    const svg = readFileSync(resolvePath(process.cwd(), 'public', 'assets', name), 'utf8');
-    c.header('content-type', 'image/svg+xml; charset=utf-8');
-    // Revalidate rather than cache for an hour. These are a couple of KB each,
-    // and the failure mode of a long TTL here is a demo showing a stale or
-    // broken logo minutes after it was fixed.
+    const path = resolvePath(process.cwd(), 'public', 'assets', name);
+    const bytes = readFileSync(path);
+    const isPng = name.toLowerCase().endsWith('.png');
+    c.header('content-type', isPng ? 'image/png' : 'image/svg+xml; charset=utf-8');
+    // Revalidate rather than cache for an hour. The failure mode of a long TTL
+    // here is a demo showing a stale or broken logo minutes after it was fixed.
     c.header('cache-control', 'no-cache');
-    return c.body(svg);
+    return c.body(bytes);
   } catch {
     return c.json({ error: 'NOT_FOUND', file: name }, 404);
   }

@@ -1,5 +1,6 @@
-<img src="public/assets/sourcemark-lockup-light.svg#gh-light-mode-only" alt="SourceMark" height="52" />
-<img src="public/assets/sourcemark-lockup-dark.svg#gh-dark-mode-only" alt="SourceMark" height="52" />
+<img src="public/assets/sourcemark-lockup.png" alt="SourceMark" height="72" />
+<br />
+<img src="public/assets/sourcemark-icon.png" alt="" height="64" />
 
 # SourceMark — no proof, no answer
 
