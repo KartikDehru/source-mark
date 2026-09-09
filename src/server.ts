@@ -4,7 +4,7 @@ import { resolve as resolvePath } from 'node:path';
 import { Hono, type Context } from 'hono';
 import { config, configWarnings } from './config.js';
 import { log } from './logger.js';
-import { effectivePolicy, getFamily, loadRegistry, registrySummary } from './registry.js';
+import { effectivePolicy, getFamily, loadRegistry, registryConsentSummary, registrySummary } from './registry.js';
 import { publicEndpointFor } from './graph.js';
 import { resolve as resolveRead } from './resolver.js';
 import { issueReceipt, receiptSignerAddress, type SignedReceipt } from './receipt.js';
@@ -16,7 +16,9 @@ import {
   upholdDispute,
   type DisputeEntry,
 } from './split.js';
-import { operatorEvmAddress, recordReadOnchain } from './split-onchain.js';
+import { operatorEvmAddress, recordReadOnchain, checkOnchainSplit } from './split-onchain.js';
+import { consentMessage, listConsents, recordConsent } from './consent.js';
+import { recordResaleFloat, resaleFloatSummary } from './resale-float.js';
 import { openApiDocument } from './openapi.js';
 import { appendTo, readCollection } from './store.js';
 import {
@@ -86,6 +88,9 @@ app.get('/debug/echo', (c) => {
 
 app.get('/health', async (c) => {
   const supported = await facilitatorSupported();
+  const onchainProblems = await checkOnchainSplit();
+  const consents = registryConsentSummary();
+  const float = resaleFloatSummary();
   return c.json({
     status: 'ok',
     service: 'sourcemark',
@@ -101,12 +106,23 @@ app.get('/health', async (c) => {
       explorer: config.split.contractAddress
         ? `https://hashscan.io/testnet/contract/${config.split.contractAddress}`
         : null,
+      arbiterAddress: config.split.arbiterAddress || null,
       routingFeeBps: config.split.routingFeeBps,
       holdbackBps: config.split.holdbackBps,
       holdbackVestingSeconds: config.split.holdbackVestingSeconds,
+      onchainProblems,
+    },
+    consent: {
+      totalSources: consents.totalSources,
+      consented: consents.consented,
+      pending: consents.pending,
     },
     // Whether the channel exists, never the secret that opens it.
-    resale: { enabled: Boolean(config.resale.apiKey), label: config.resale.label },
+    resale: {
+      enabled: Boolean(config.resale.apiKey),
+      label: config.resale.label,
+      float: { reads: float.reads, grossTinybar: float.grossTinybar },
+    },
     x402: {
       facilitator: config.x402.facilitator,
       network: config.x402.network,
@@ -117,8 +133,12 @@ app.get('/health', async (c) => {
       asset: config.x402.asset,
     },
     receipts: { signer: receiptSignerAddress() },
-    families: registrySummary().map((f) => ({ family: f.family, ready: f.ready })),
-    warnings: configWarnings(),
+    families: registrySummary().map((f) => ({
+      family: f.family,
+      ready: f.ready,
+      consentedSources: f.consentedSources,
+    })),
+    warnings: [...configWarnings(), ...onchainProblems],
   });
 });
 
@@ -429,6 +449,18 @@ async function completeRead(
     shares: split.shares,
   });
 
+  if (channel === 'resale') {
+    recordResaleFloat({
+      ts: Math.floor(Date.now() / 1000),
+      digest: receipt.digest,
+      family: familyName,
+      metric,
+      grossTinybar: split.gross,
+      via: config.resale.label,
+      onchainTx: onchain?.transaction ?? null,
+    });
+  }
+
   appendTo<SignedReceipt>('receipts', receipt);
 
   c.header('X-Payment-Receipt', Buffer.from(JSON.stringify(receipt)).toString('base64'));
@@ -515,16 +547,23 @@ app.get('/v1/receipts/:digest', (c) => {
   });
 });
 
-app.get('/v1/payouts', (c) =>
-  c.json({
+app.get('/v1/payouts', (c) => {
+  const float = resaleFloatSummary();
+  return c.json({
     mode: config.split.mode,
     routingFeeBps: config.split.routingFeeBps,
     holdbackBps: config.split.holdbackBps,
     holdbackVestingSeconds: config.split.holdbackVestingSeconds,
     note: 'Held-back balances are unvested and are the liability pool for disputes. No source posts collateral; penalties come out of earned-but-uncleared revenue.',
     sources: payoutSummaries(),
-  }),
-);
+    resaleFloat: {
+      via: config.resale.label,
+      reads: float.reads,
+      grossTinybar: float.grossTinybar,
+      note: 'HBAR fronted by the operator for resale-channel reads. Not bridged from the reseller\'s currency.',
+    },
+  });
+});
 
 app.post('/v1/disputes', async (c) => {
   const body = (await c.req.json().catch(() => ({}))) as { digest?: string; claimant?: string; reason?: string };
@@ -547,6 +586,80 @@ app.post('/v1/disputes', async (c) => {
 });
 
 app.get('/v1/disputes', (c) => c.json({ disputes: readCollection<DisputeEntry>('disputes') }));
+
+/**
+ * Opt a source in by proving control of its registered payout address.
+ *
+ * Body: { deploymentId, payoutAddress, issuedAt, signature } where signature
+ * is EIP-191 over the message from GET /v1/consent/message.
+ */
+app.get('/v1/consent', (c) => {
+  const summary = registryConsentSummary();
+  return c.json({
+    ...summary,
+    records: listConsents(),
+    howTo: [
+      'GET /v1/consent/message?deploymentId=…&payoutAddress=…&issuedAt=<unix>',
+      'Sign that exact message with the payout address key (EIP-191 personal_sign).',
+      'POST /v1/consent with deploymentId, payoutAddress, issuedAt, signature.',
+    ],
+  });
+});
+
+app.get('/v1/consent/message', (c) => {
+  const deploymentId = c.req.query('deploymentId');
+  const payoutAddress = c.req.query('payoutAddress');
+  const issuedRaw = c.req.query('issuedAt');
+  if (!deploymentId || !payoutAddress) {
+    return c.json({ error: 'BAD_REQUEST', detail: 'deploymentId and payoutAddress are required' }, 400);
+  }
+  const issuedAt = issuedRaw ? Number.parseInt(issuedRaw, 10) : Math.floor(Date.now() / 1000);
+  if (!Number.isFinite(issuedAt)) return c.json({ error: 'BAD_ISSUED_AT' }, 400);
+  try {
+    return c.json({
+      message: consentMessage(deploymentId, payoutAddress, issuedAt),
+      issuedAt,
+      deploymentId,
+      payoutAddress,
+    });
+  } catch (err) {
+    return c.json({ error: 'BAD_PAYOUT_ADDRESS', detail: err instanceof Error ? err.message : String(err) }, 400);
+  }
+});
+
+app.post('/v1/consent', async (c) => {
+  const body = (await c.req.json().catch(() => ({}))) as {
+    deploymentId?: string;
+    payoutAddress?: string;
+    issuedAt?: number;
+    signature?: string;
+  };
+  if (!body.deploymentId || !body.payoutAddress || !body.signature || !body.issuedAt) {
+    return c.json(
+      { error: 'BAD_REQUEST', detail: 'deploymentId, payoutAddress, issuedAt, and signature are required' },
+      400,
+    );
+  }
+
+  let expected: { payoutAddress: string; protocol: string } | undefined;
+  for (const f of Object.values(loadRegistry().families)) {
+    for (const s of f.sources) {
+      if (s.id === body.deploymentId) expected = { payoutAddress: s.payoutAddress, protocol: s.protocol };
+    }
+  }
+  if (!expected) return c.json({ error: 'UNKNOWN_DEPLOYMENT', deploymentId: body.deploymentId }, 404);
+
+  const result = await recordConsent({
+    deploymentId: body.deploymentId,
+    payoutAddress: body.payoutAddress,
+    issuedAt: body.issuedAt,
+    signature: body.signature as `0x${string}`,
+    expectedPayoutAddress: expected.payoutAddress,
+    protocol: expected.protocol,
+  });
+  if (!result.ok) return c.json({ error: result.error, detail: result.detail }, 400);
+  return c.json({ consent: result.record, summary: registryConsentSummary() });
+});
 
 /**
  * Brand assets for the demo page.

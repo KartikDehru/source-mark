@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { config } from './config.js';
+import { consentFor, listConsents } from './consent.js';
 
 /**
  * The conformance registry: schema family -> the set of pinned deployments that
@@ -89,7 +90,19 @@ export function loadRegistry(force = false): Registry {
 }
 
 export function getFamily(name: string): FamilySpec | undefined {
-  return loadRegistry().families[name];
+  const family = loadRegistry().families[name];
+  if (!family) return undefined;
+  // Overlay live EIP-191 consents on top of the static registry file. The file
+  // still says "pending" for stand-ins; once a payout address signs, the
+  // runtime view flips to consented without rewriting git history.
+  return {
+    ...family,
+    sources: family.sources.map((s) => {
+      const live = consentFor(s.id);
+      if (!live) return s;
+      return { ...s, consent: 'consented', payoutAddress: live.payoutAddress };
+    }),
+  };
 }
 
 /**
@@ -119,20 +132,31 @@ export function registrySummary(): Array<{
   schema: string;
   policy: FreshnessPolicy;
   metrics: string[];
-  sources: Array<{ protocol: string; chainId: number; id: string; pinned: boolean }>;
+  sources: Array<{
+    protocol: string;
+    chainId: number;
+    id: string;
+    pinned: boolean;
+    payoutAddress: string;
+    consent: string;
+  }>;
   ready: boolean;
   schemaIpfsHash?: string;
   comparability: Comparability;
   comparabilityNote?: string;
   agreementToleranceBps?: number;
+  consentedSources: number;
 }> {
   const reg = loadRegistry();
-  return Object.entries(reg.families).map(([name, f]) => {
+  return Object.keys(reg.families).map((name) => {
+    const f = getFamily(name)!;
     const sources = f.sources.map((s) => ({
       protocol: s.protocol,
       chainId: s.chainId,
       id: isPlaceholder(s.id) ? 'UNPINNED' : s.id,
       pinned: !isPlaceholder(s.id),
+      payoutAddress: s.payoutAddress,
+      consent: s.consent,
     }));
     return {
       family: name,
@@ -145,7 +169,26 @@ export function registrySummary(): Array<{
       policy: effectivePolicy(f),
       metrics: Object.keys(f.metrics),
       sources,
+      consentedSources: sources.filter((s) => s.consent === 'consented').length,
       ready: sources.filter((s) => s.pinned).length >= effectivePolicy(f).minSources,
     };
   });
+}
+
+/** Live consent counts across every distinct deployment in the registry. */
+export function registryConsentSummary(): {
+  totalSources: number;
+  consented: number;
+  pending: number;
+} {
+  const byDeployment = new Set<string>();
+  for (const f of Object.values(loadRegistry().families)) {
+    for (const s of f.sources) byDeployment.add(s.id);
+  }
+  const consented = listConsents().filter((c) => byDeployment.has(c.deploymentId)).length;
+  return {
+    totalSources: byDeployment.size,
+    consented,
+    pending: byDeployment.size - consented,
+  };
 }

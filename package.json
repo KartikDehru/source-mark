@@ -24,6 +24,8 @@
     "contracts:typecheck": "tsc -p tsconfig.contracts.json --noEmit",
     "payouts:deploy": "hardhat run scripts/deploy-payouts.ts --network hederaTestnet",
     "payouts:status": "tsx scripts/payouts-status.ts",
+    "payouts:set-arbiter": "tsx scripts/set-arbiter.ts",
+    "consent:demo": "tsx scripts/consent-demo.ts",
     "tunnel": "tsx scripts/tunnel.ts"
   },
   "dependencies": {

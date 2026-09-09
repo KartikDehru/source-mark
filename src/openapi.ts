@@ -210,6 +210,35 @@ export function openApiDocument(origin: string): unknown {
         },
       },
 
+      '/v1/consent': {
+        get: {
+          tags: ['discovery'],
+          operationId: 'listConsents',
+          summary: 'Which sources have opted in by signing with their payout key',
+          responses: {
+            200: {
+              description: 'Consent summary and records.',
+              content: { 'application/json': { schema: { type: 'object', additionalProperties: true } } },
+            },
+          },
+        },
+        post: {
+          tags: ['discovery'],
+          operationId: 'submitConsent',
+          summary: 'Opt a source in with an EIP-191 signature from its payout address',
+          responses: {
+            200: {
+              description: 'Consent recorded.',
+              content: { 'application/json': { schema: { type: 'object', additionalProperties: true } } },
+            },
+            400: {
+              description: 'Bad signature or mismatched payout address.',
+              content: { 'application/json': { schema: { $ref: '#/components/schemas/Error' } } },
+            },
+          },
+        },
+      },
+
       '/health': {
         get: {
           tags: ['discovery'],
