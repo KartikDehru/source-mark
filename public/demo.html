@@ -618,10 +618,10 @@
       <h2 class="sec">What this does not do.</h2>
       <p class="lede">The refusal rule would be worth very little coming from a project that oversells everything else.</p>
       <ul class="limits">
-        <li><b>No source has opted in</b><span>Payout addresses in the registry are stand-ins. The routing works; the consent is not real yet.</span></li>
-        <li><b>The operator judges disputes</b><span>The refund path and the slashing arithmetic are real. The judge is not decentralised.</span></li>
+        <li><b>Payout addresses are still stand-ins</b><span>Consent is real (EIP-191 from the payout key via <code>POST /v1/consent</code>), but the addresses themselves come from a public test mnemonic until real indexer teams register their own.</span></li>
+        <li><b>Dispute resolution is arbiter-gated</b><span>Anyone may open a dispute. A named arbiter decides it — and on this deployment the arbiter is a distinct key from the operator. Trustless resolution would need onchain re-derivation of a subgraph query.</span></li>
         <li><b>Testnet only</b><span>Hedera testnet HBAR, a testnet facilitator, and a testnet <code>SourcePayouts</code> deployment.</span></li>
-        <li><b>Resale reads are operator-funded</b><span>Bazantic collects upstream in another currency; sources are still paid in HBAR out of our own float.</span></li>
+        <li><b>Resale reads are operator-funded</b><span>Bazantic collects upstream in another currency; sources are still paid in HBAR out of our float. The float is now an auditable ledger on <code>/health</code>.</span></li>
         <li><b>Refusal cannot be bought around</b><span>A caller may tighten a freshness bound. Nothing a caller sends can loosen one past the family policy.</span></li>
       </ul>
     </div>
@@ -638,9 +638,10 @@
       <div><code>GET /v1/receipts/:digest</code><span>The signed evidence behind an answer, plus how to re-derive it.</span></div>
       <div><code>GET /v1/payouts</code><span>Per source: earned, cleared, still slashable, already slashed.</span></div>
       <div><code>POST /v1/disputes</code><span>Refund a disproved read out of unvested holdback.</span></div>
+      <div><code>POST /v1/consent</code><span>Opt a source in by EIP-191-signing with its payout address.</span></div>
       <div><code>GET /openapi.json</code><span>The machine-readable contract this service is listed from.</span></div>
     </div>
-    <div class="curl" id="curl">curl -i "http://localhost:8787/v1/reads/aave-v3-ethereum?metric=supplyAPY&amp;asset=USDC"</div>
+    <div class="curl" id="curl">curl -i "/v1/reads/aave-v3-ethereum?metric=supplyAPY&amp;asset=USDC"</div>
     An MCP server ships alongside this, so an agent can hold the same paywalled read as a tool.
     Built for ETHOnline · MIT licensed.
     <div class="sig">
@@ -1167,20 +1168,22 @@ const TABS = {
       const rows = f.sources.map((s) =>
         '<tr><td>' + esc(s.protocol) + '</td><td class="num faint">' + s.chainId + '</td>' +
         '<td class="' + (s.pinned ? 'dim' : 'bad') + '" title="' + esc(s.id) + '">' + esc(short(s.id, 20, 6)) + '</td>' +
-        '<td class="' + (s.pinned ? 'st-ok' : 'st-no') + '">' + (s.pinned ? 'pinned' : 'UNPINNED') + '</td></tr>').join('');
+        '<td class="' + (s.pinned ? 'st-ok' : 'st-no') + '">' + (s.pinned ? 'pinned' : 'UNPINNED') + '</td>' +
+        '<td class="' + (s.consent === 'consented' ? 'st-ok' : 'st-no') + '">' + esc(s.consent || 'pending') + '</td></tr>').join('');
 
       html += '<div class="block"><div class="blockhead"><b>' + esc(f.family) +
         '</b> <span>· ' + esc(f.label) + '</span></div>' +
         '<div class="qmeta" style="justify-content:flex-start;margin:0 0 14px">' +
           tag('status', f.ready ? 'ready' : 'below quorum', f.ready ? 'ok' : 'bad') +
           tag('comparability', esc(f.comparability), f.comparability === 'identical' ? 'ok' : 'warn') +
+          tag('consent', (f.consentedSources || 0) + '/' + f.sources.length, f.consentedSources ? 'ok' : 'warn') +
           tag('quorum', f.policy.minSources, 'ok') +
           tag('metrics', esc(f.metrics.join(', ')), 'ok') +
           (f.schemaIpfsHash ? tag('schema hash', esc(short(f.schemaIpfsHash, 10, 6)), 'ok') : '') +
         '</div>' +
         (f.comparabilityNote ? '<div class="banner info">' + esc(f.comparabilityNote) + '</div>' : '') +
         '<div class="tbl"><table><thead><tr><th>protocol</th><th class="num">chain</th>' +
-        '<th>deployment id</th><th>state</th></tr></thead><tbody>' + rows + '</tbody></table></div></div>';
+        '<th>deployment id</th><th>state</th><th>consent</th></tr></thead><tbody>' + rows + '</tbody></table></div></div>';
     }
     return html + raw(b, 'GET /v1/registry');
   },
@@ -1273,14 +1276,19 @@ const TABS = {
         tag('facilitator', h.x402.reachable ? 'reachable' : 'unreachable', h.x402.reachable ? 'ok' : 'bad') +
         tag('graph key', h.graph.apiKeyConfigured ? 'set' : 'missing', h.graph.apiKeyConfigured ? 'ok' : 'bad') +
         tag('split', esc(h.modes.split), h.modes.split === 'onchain' ? 'ok' : 'warn') +
+        (h.consent ? tag('consent', h.consent.consented + '/' + h.consent.totalSources, h.consent.consented ? 'ok' : 'warn') : '') +
+        (h.split && h.split.arbiterAddress ? tag('arbiter', esc(short(h.split.arbiterAddress, 8, 6)), 'ok') : '') +
         (h.resale ? tag('resale', h.resale.enabled ? h.resale.label : 'disabled', h.resale.enabled ? 'ok' : 'warn') : '') +
+        (h.resale && h.resale.float ? tag('float spent', hbar(h.resale.float.grossTinybar) + ' · ' + h.resale.float.reads + ' reads', 'warn') : '') +
         (h.receipts && h.receipts.signer ? tag('receipt signer', esc(short(h.receipts.signer, 8, 6)), 'ok') : '') +
       '</div>' +
       (h.split && h.split.contract
         ? '<div class="banner good"><strong>Payout contract</strong> <code>' + esc(h.split.contract) + '</code>' +
           ' — <a href="' + esc(h.split.explorer) + '" target="_blank" rel="noopener">view on HashScan</a>' +
           '<span class="s">Routing fee ' + (h.split.routingFeeBps / 100) + '%, holdback ' +
-          (h.split.holdbackBps / 100) + '% unvested for ' + duration(h.split.holdbackVestingSeconds) + '.</span></div>'
+          (h.split.holdbackBps / 100) + '% unvested for ' + duration(h.split.holdbackVestingSeconds) + '.' +
+          (h.split.arbiterAddress ? ' Arbiter <code>' + esc(h.split.arbiterAddress) + '</code>.' : '') +
+          '</span></div>'
         : '') +
       '<div class="banner info"><strong>The facilitator advertises</strong>' +
       '<span class="s">' + (h.x402.advertisedNetworks || []).map((n) => '<code>' + esc(n) + '</code>').join(' · ') +

@@ -156,7 +156,8 @@ The service still starts and still serves its 402. Every read will `REFUSE` with
 | `GET /v1/receipts/:digest` | The signed evidence behind an answer, plus how to re-derive it. |
 | `POST /v1/disputes` | Challenge a receipt. |
 | `GET /v1/payouts` | Per-source earnings: cleared, held back, slashed. |
-| `GET /health` | Modes, facilitator reachability, split contract and holdback terms, whether the resale channel is armed, per-family readiness, config warnings. |
+| `GET /v1/consent` · `POST /v1/consent` | List or submit EIP-191 opt-ins from a source's payout address. |
+| `GET /health` | Modes, facilitator reachability, split contract and holdback terms, arbiter, consent counts, resale float, per-family readiness, config warnings. |
 | `GET /openapi.json` | OpenAPI 3.1 description, with 402 and 409 documented as ordinary responses. `servers` reflects the URL the request actually arrived on. |
 | `GET /demo` | Hosted page driving every capability above against live data. |
 | `POST /demo/run` | Runs the real buyer loop against this service and returns the trace. Rate limited. |
@@ -256,13 +257,19 @@ All six pinned deployments are registered as sources. Check live state with
 every tinybar it holds is attributed to the routing fee, a source's cleared
 balance, or a source's holdback.
 
-**The payout addresses are stand-ins.** No indexer or protocol team has opted
-into this; every source in `registry/families.json` is `consent: pending`. The
-addresses are derived from the public Hardhat test mnemonic (`test test …
-junk`, indices 0–5) specifically so they cannot be mistaken for real operator
-addresses — anyone can derive the keys and run `npx tsx scripts/claim-demo.ts`
-to claim as a source and check the payee path themselves. What is being
-demonstrated is the contract, not a payout network that does not exist.
+**The payout addresses start as stand-ins.** No indexer or protocol team has
+handed us a production address. Every source in `registry/families.json` ships
+as `consent: pending`, with addresses derived from the public Hardhat test
+mnemonic (`test test … junk`, indices 0–5) so they cannot be mistaken for real
+operator wallets — anyone can derive the keys and run
+`npx tsx scripts/claim-demo.ts` to claim as a source.
+
+**Consent is still a real path.** `POST /v1/consent` accepts an EIP-191
+signature from the registered payout key and overlays `consent: consented` on
+the live registry without rewriting the file. `npm run consent:demo` signs for
+every stand-in to prove the join path works end to end. What is being
+demonstrated is the contract *and* the opt-in mechanism — not a payout network
+of real teams that does not exist yet.
 
 ### Verified end to end
 
@@ -345,16 +352,16 @@ Reproduce with `npm run pay`, `npm run pay -- --strict-age 1`,
 
 Stated up front, because the mechanism is easy to overstate:
 
-1. **Nobody has opted in.** Every source is `consent: pending` and every payout address is a stand-in from a public test mnemonic. Sources have to register, there is no mandate from the indexing ecosystem, and a registry we wrote ourselves is not a standard.
-2. **Holdback percentages are unpriced.** We demonstrate that the mechanism executes correctly. We do not claim the numbers are correctly calibrated against real risk.
+1. **Payout addresses are still stand-ins.** Consent is real — `POST /v1/consent` verifies an EIP-191 signature from the registered payout key, overlays `consent: consented` on the live registry, and `npm run consent:demo` proves the path with the public Hardhat mnemonic. What it does *not* claim is that Messari or Aave have joined. The addresses remain derived from `test test … junk` until a real team registers their own.
+2. **Holdback percentages are unpriced.** We demonstrate that the mechanism executes correctly. We do not claim the numbers are correctly calibrated against real risk. The dispute bond (`DISPUTE_BOND_TINYBAR`, default 1 HBAR) is likewise a demo default, not a market-priced griefing cost.
 3. **Dispute resolution is arbiter-gated.** Anyone can *open* a dispute permissionlessly and every one is a public event, but a named arbiter decides it. Trustless resolution would need onchain re-derivation of a subgraph query.
-4. **On the demo deployment the arbiter is the operator.** One key both collects the routing fee and rules on disputes, which is not a credible separation — `payouts:status` flags it. The contract supports splitting them (`ARBITER_ADDRESS`, and `setArbiter` for rotation); we just have not, on testnet.
-5. **The liability window can be griefed.** An open dispute freezes the named sources' holdback so it cannot be waited out. The bond is the only thing making a frivolous freeze expensive, and we have not modelled the right bond size.
+4. **The arbiter is separated from the operator on this deployment.** `ARBITER_ADDRESS` is a distinct key, rotated onchain with `npm run payouts:set-arbiter` ([tx](https://hashscan.io/testnet/transaction/0xab09a3e6557affbfac67874f9baa6455e43ea9bf87f780cca5e85b8e4458db83)). `/health` and `payouts:status` flag any reversion to the same-key setup. Separation is operational, not trustless — the arbiter is still a person with a key.
+5. **The liability window can be griefed.** An open dispute freezes the named sources' holdback so it cannot be waited out. The bond is the only thing making a frivolous freeze expensive.
 6. **Liability expires.** Once a holdback vests it is gone; a dispute raised after `vestingSeconds` recovers nothing. Fraud discovered late is not recoverable.
 7. **A successful read proves provenance, not truth.** On an `identical` family, agreement between independent deployments is real evidence — but both could be indexing the same faulty logic, and agreement would not catch that. On a `peer` family the headline is a market summary, not a verified value; `range` and the per-source table are the honest output.
 8. **Amounts are testnet-scale.** The liability pool is a working demonstration, not insurance.
-9. **A resold read is funded by the operator, not by the caller's dollars.** The two rails never touch: Bazantic collects USDC on Base and we pay sources HBAR on Hedera out of the operator float. Nothing bridges them, and no settlement reconciles what the reseller collected against what we paid out. The response says so rather than implying the caller's payment reached Hedera.
-10. **The public URL is a quick tunnel.** It changes hostname on restart and has dropped mid-session, which invalidates the Bazantic registration. Fine for a demo, not a deployment.
+9. **A resold read is funded by the operator, not by the caller's dollars.** The two rails never touch: Bazantic collects USDC on Base and we pay sources HBAR on Hedera out of the operator float. Nothing bridges them. The float *is* now an auditable ledger (`/health` → `resale.float`, and `data/resale-float.json`), so what we fronted is visible even though the currencies never meet.
+10. **Local tunneling is still ephemeral.** `npm run tunnel` remains useful for local demos. Production and judging links should use a stable host (this deployment runs on Railway) so gateway registrations and receipts stay reproducible.
 
 ---
 
@@ -380,6 +387,8 @@ scripts/      doctors and one-shot tools (below)
 | `discover` | Find deployments sharing a schema hash, to add sources without code changes |
 | `payouts:deploy` | Deploy `SourcePayouts` and register every source in the registry |
 | `payouts:status` | Read contract state and check every tinybar is attributed |
+| `payouts:set-arbiter` | Rotate the onchain arbiter to `ARBITER_ADDRESS` (must differ from the operator) |
+| `consent:demo` | EIP-191-sign consent for every stand-in payout address and POST it |
 | `claim-demo` | Claim as a source, verifying owed matches received on-chain |
 | `rpc-probe` | Show raw Hedera relay status codes, which viem otherwise collapses into "unknown RPC error" |
 | `tunnel` | Put the gateway on a public HTTPS URL, record it as `PUBLIC_URL`, and poll until it genuinely answers rather than trusting the announcement |
@@ -388,7 +397,7 @@ AI tool attribution: **[AI-USAGE.md](./AI-USAGE.md)**
 
 ```bash
 npm run typecheck        # gateway
-npm test                 # 20 gateway tests (aggregation, freshness, resale gate), then 25 contract tests
+npm test                 # gateway tests (aggregation, freshness, resale gate, consent), then contract tests
 npm run contracts:test   # Solidity only, with its own typecheck
 ```
 
