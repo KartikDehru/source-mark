@@ -1,0 +1,75 @@
+{
+  "handle": "sourcemark-proven-lending-rate",
+  "name": "SourceMark proven lending rate with Hedera settlement check",
+  "description": "Read a provenance-checked USDC supply APY from SourceMark (The Graph subgraphs behind an x402/resale gate on Hedera), then confirm the SourceMark operator account still exists and holds balance on the Hedera Mirror Node. Neither service alone is enough: SourceMark supplies the verified rate and receipt; Hedera Mirror Node independently proves the payment rail account the rate settlement depends on.",
+  "model": "anthropic/claude-sonnet-4.6",
+  "input_schema": {
+    "type": "object",
+    "additionalProperties": false,
+    "required": ["family", "metric", "asset", "hedera_account_id"],
+    "properties": {
+      "family": {
+        "type": "string",
+        "title": "Schema family",
+        "description": "SourceMark family id, e.g. aave-v3-ethereum",
+        "enum": ["aave-v3-ethereum", "lending-v1-ethereum"]
+      },
+      "metric": {
+        "type": "string",
+        "title": "Metric",
+        "description": "Metric exposed by the family",
+        "enum": ["supplyAPY", "borrowAPY", "tvlUSD", "totalBorrowUSD"]
+      },
+      "asset": {
+        "type": "string",
+        "title": "Asset symbol",
+        "description": "Market asset filter such as USDC or WETH"
+      },
+      "hedera_account_id": {
+        "type": "string",
+        "title": "Hedera account to verify",
+        "description": "Usually the SourceMark X402_PAY_TO / operator account, e.g. 0.0.10409341"
+      }
+    }
+  },
+  "input_example": {
+    "family": "aave-v3-ethereum",
+    "metric": "supplyAPY",
+    "asset": "USDC",
+    "hedera_account_id": "0.0.10409341"
+  },
+  "output_example": {
+    "rate_percent": 3.63,
+    "family": "aave-v3-ethereum",
+    "receipt_digest": "0xabc…",
+    "sources_ok": 2,
+    "hedera_account": "0.0.10409341",
+    "hedera_balance_tinybar": "99900000000",
+    "summary": "USDC supply APY 3.63% from 2 fresh Graph deployments; operator account 0.0.10409341 is live on Hedera testnet."
+  },
+  "prompt_template": "You are composing a single verified lending-rate brief for an agent that will act on the number.\n\nInputs:\n- family: {{family}}\n- metric: {{metric}}\n- asset: {{asset}}\n- hedera_account_id: {{hedera_account_id}}\n\nDo this in order. Do not skip steps. Do not invent numbers.\n\n1. Call SourceMark tool `health` and confirm the service is ready (families ready, facilitator reachable).\n2. Call SourceMark tool `listSchemaFamilies` (or read the registry) and confirm `{{family}}` exists and is ready.\n3. Call SourceMark tool `readMetric` for family={{family}}, metric={{metric}}, asset={{asset}}.\n   - If the response is REFUSED / 409: return that the rate is unavailable and stop. Never substitute a single-source or cached value.\n   - If answered: capture answer.value, answer.unit, receipt.digest, contributing sources, and any onchain payout / payment channel fields.\n4. Call Hedera Mirror Node tool for GET `/api/v1/accounts/{idOrAliasOrEvmAddress}` with id={{hedera_account_id}}.\n   - Confirm the account exists and record balance (tinybar) and the EVM address if present.\n5. Produce a concise JSON-shaped brief with:\n   - rate_percent (or null if refused)\n   - family, metric, asset\n   - receipt_digest (or null)\n   - sources_ok count\n   - hedera_account, hedera_balance_tinybar, hedera_evm_address\n   - summary: one sentence stating the rate AND that the Hedera operator/pay-to account was independently verified on the Mirror Node\n\nWhy both services: SourceMark alone gives a number; Hedera Mirror Node alone gives an account balance. Together they let an agent act on a provenance-checked rate while confirming the settlement rail account behind that service is real and funded.",
+  "tool_bindings": [
+    {
+      "gateway_slug": "kz46uwbv5fewjo2l57uuvnzajq",
+      "tool_name": "health"
+    },
+    {
+      "gateway_slug": "kz46uwbv5fewjo2l57uuvnzajq",
+      "tool_name": "listSchemaFamilies"
+    },
+    {
+      "gateway_slug": "kz46uwbv5fewjo2l57uuvnzajq",
+      "tool_name": "readMetric"
+    },
+    {
+      "gateway_slug": "kz46uwbv5fewjo2l57uuvnzajq",
+      "tool_name": "getReceipt"
+    },
+    {
+      "gateway_slug": "wonsgifa6zha7p4wku4mp5i6em",
+      "tool_name": "getAccount"
+    }
+  ],
+  "account_id": "9e1e99c6-3334-4bb9-afad-80a2f76868d4",
+  "created_by": "Kartik Dehru"
+}

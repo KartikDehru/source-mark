@@ -318,7 +318,8 @@ stayed withheld. `npm run payouts:status` reports the contract balanced.
 
 **Dollars go in on one chain, source payouts come out on another.** Through the
 Bazantic gateway
-[`rj5zqylrjnezdkpvh3powvzn7a.bazgateway.com`](https://rj5zqylrjnezdkpvh3powvzn7a.bazgateway.com),
+[`kz46uwbv5fewjo2l57uuvnzajq.bazgateway.com`](https://kz46uwbv5fewjo2l57uuvnzajq.bazgateway.com)
+(SourceMark, Railway-backed; older Cloudflare listings are stale),
 a caller paid **$0.01 in USDC on
 Base**; Bazantic forwarded the request; the read was fanned across two pinned
 Graph deployments at block 25,933,010 (lag 0, age 13s) and answered **3.6331%**
@@ -326,6 +327,11 @@ supplyAPY — and both sources were paid **in HBAR on Hedera** in
 [`0xe2d834345a98109b0da0e11bbe85992b16907afcaa172882fa1bdf111d9b3041`](https://hashscan.io/testnet/transaction/0xe2d834345a98109b0da0e11bbe85992b16907afcaa172882fa1bdf111d9b3041).
 The same request with `strictAge=1` returns `409`, free, `channel: "resale"`,
 nothing settled and no source paid. The policy is not relaxed for resold reads.
+
+Bazantic track setup (gateway + multi-service Recipe draft for Hedera Mirror
+Node): **[bazantic/SETUP.md](./bazantic/SETUP.md)**. The gateway is registered;
+set the dashboard API credential and publish the Recipe from
+`bazantic/recipe-sourcemark-proven-lending-rate.json` to finish qualification.
 
 Bazantic also generates an MCP endpoint per gateway from the same spec. It was
 observed serving 7 tools carrying our own `operationId`s and descriptions —
