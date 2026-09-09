@@ -52,9 +52,17 @@ export interface DisputeEntry {
   digest: string;
   claimant: string;
   reason: string;
-  status: 'OPEN' | 'UPHELD' | 'REJECTED';
+  status: 'OPEN' | 'UPHELD' | 'REJECTED' | 'AMBIGUOUS';
   refunded: string;
   chargedTo: string[];
+  /** How the gateway decided: re-derive against Graph, or arbiter override. */
+  decision?: 'reproduce' | 'arbiter';
+  reproduce?: {
+    verdict: 'MATCH' | 'MISMATCH' | 'AMBIGUOUS';
+    detail: string;
+    expectedAnswerHash: string;
+    recomputedAnswerHash: string | null;
+  };
 }
 
 export function computeSplit(
@@ -179,19 +187,32 @@ export function payoutSummaries(now = Math.floor(Date.now() / 1000)): PayoutSumm
   });
 }
 
+export function recordDispute(entry: DisputeEntry): DisputeEntry {
+  const rows = readCollection<DisputeEntry>('disputes');
+  rows.push(entry);
+  writeCollection('disputes', rows);
+  return entry;
+}
+
 /**
  * Uphold a dispute: refund the buyer out of the unvested holdback of every
  * source that contributed the falsified claim. Capped at what is actually
  * unvested — we never promise a refund we cannot fund.
  */
-export function upholdDispute(digest: string, claimant: string, reason: string, chargedTo: string[]): DisputeEntry {
+export function upholdDispute(
+  digest: string,
+  claimant: string,
+  reason: string,
+  chargedTo: string[],
+  extra?: Partial<Pick<DisputeEntry, 'decision' | 'reproduce'>>,
+): DisputeEntry {
   const summaries = payoutSummaries();
   const available = chargedTo.reduce((sum, id) => {
     const s = summaries.find((x) => x.deploymentId === id);
     return sum + BigInt(s?.unvestedHoldback ?? '0');
   }, 0n);
 
-  const entry: DisputeEntry = {
+  return recordDispute({
     ts: Math.floor(Date.now() / 1000),
     digest,
     claimant,
@@ -199,10 +220,26 @@ export function upholdDispute(digest: string, claimant: string, reason: string, 
     status: 'UPHELD',
     refunded: available.toString(),
     chargedTo,
-  };
+    ...extra,
+  });
+}
 
-  const rows = readCollection<DisputeEntry>('disputes');
-  rows.push(entry);
-  writeCollection('disputes', rows);
-  return entry;
+export function rejectDispute(
+  digest: string,
+  claimant: string,
+  reason: string,
+  chargedTo: string[],
+  status: 'REJECTED' | 'AMBIGUOUS',
+  extra?: Partial<Pick<DisputeEntry, 'decision' | 'reproduce'>>,
+): DisputeEntry {
+  return recordDispute({
+    ts: Math.floor(Date.now() / 1000),
+    digest,
+    claimant,
+    reason,
+    status,
+    refunded: '0',
+    chargedTo,
+    ...extra,
+  });
 }

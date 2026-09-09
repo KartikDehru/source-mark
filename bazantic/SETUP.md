@@ -10,13 +10,14 @@ Target prize: **Best Recipe that uses EthGlobal Hackathon Sponsor APIs**
 | Requirement | Status | Notes |
 | --- | --- | --- |
 | Bazantic account | ✅ | CLI session account `john swift` / id `9e1e99c6-3334-4bb9-afad-80a2f76868d4` |
-| Gateway for this project | ✅ registered | Slug **`kz46uwbv5fewjo2l57uuvnzajq`** · name **SourceMark** · Railway endpoint |
-| Gateway credential (api-key) | ⚠️ **you must set in dashboard** | Until the shared `RESALE_API_KEY` is saved under Payment Gateway → Authentication, every path on the new slug returns **404** |
+| Gateway for this project | ✅ registered + marketplace published | Slug **`kz46uwbv5fewjo2l57uuvnzajq`** · handle **sourcemark.bazgateway.com** · Railway endpoint |
+| Gateway credential (api-key) | ✅ set | Header `x-api-key` = Railway/`RESALE_API_KEY` |
 | Second service (sponsor **or** already on Bazantic) | ✅ chosen | **Hedera Mirror Node** slug `wonsgifa6zha7p4wku4mp5i6em` (Hedera is an ETHOnline sponsor) |
-| Recipe using both in one flow | ⚠️ paste in UI | Definition in `recipe-sourcemark-proven-lending-rate.json` |
-| Final result depends on both | ✅ by design | Rate from SourceMark + independent Hedera account proof |
+| Recipe using both in one flow | ✅ published | [sourcemark-proven-lending-rate-with-hedera-settl](https://bazantic.com/dashboard/recipes/sourcemark-proven-lending-rate-with-hedera-settl) — test run returned ~3.63% USDC APY + Hedera account check |
+| Final result depends on both | ✅ verified in test | Rate from SourceMark + independent Hedera account proof |
+| Old Cloudflare listing retired | ✅ | Account now has only **SourceMark** (stale `rj5zqylrjnezdkpvh3powvzn7a` gone) |
 | Screen recording | ⏳ submission video | Walk gateway → recipe run → both tools fire |
-| Bazantic username in submission | ⏳ | Use the handle/email you registered with |
+| Bazantic username in submission | ⏳ | Dashboard account: **john swift** |
 
 ## Live URLs
 
@@ -24,9 +25,9 @@ Target prize: **Best Recipe that uses EthGlobal Hackathon Sponsor APIs**
 | --- | --- |
 | Backend | https://source-mark-production.up.railway.app |
 | OpenAPI | https://source-mark-production.up.railway.app/openapi.json |
-| Bazantic gateway | https://kz46uwbv5fewjo2l57uuvnzajq.bazgateway.com |
-| MCP (once credential is set) | https://kz46uwbv5fewjo2l57uuvnzajq.bazgateway.com/mcp |
-| Old stale listing | `rj5zqylrjnezdkpvh3powvzn7a` — still points at a dead Cloudflare tunnel; retire it in the dashboard |
+| Bazantic gateway | https://sourcemark.bazgateway.com (also `kz46uwbv5fewjo2l57uuvnzajq.bazgateway.com`) |
+| Published recipe | https://bazantic.com/dashboard/recipes/sourcemark-proven-lending-rate-with-hedera-settl |
+| MCP | https://sourcemark.bazgateway.com/mcp |
 
 Auth type is **`api-key`** (not `x402-mpp`): Bazantic settles callers in USDC on Base; SourceMark prices in HBAR on Hedera. Those rails do not meet. The gateway forwards `RESALE_API_KEY`; SourceMark still runs the full provenance gate and pays sources onchain.
 

@@ -50,6 +50,46 @@ test('canonical JSON distinguishes materially different answers', () => {
   assert.notEqual(digestOf({ value: 4.31 }), digestOf({ value: 4.32 }));
 });
 
+test('verifySignedReceipt recovers the EIP-191 signer over the raw digest', async () => {
+  const { privateKeyToAccount } = await import('viem/accounts');
+  const { verifySignedReceipt } = await import('../src/receipt.js');
+  const account = privateKeyToAccount(
+    '0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80',
+  );
+  const body = {
+    v: 1 as const,
+    family: 'demo',
+    request: { metric: 'supplyAPY', asset: 'USDC' },
+    answerHash: digestOf({ value: 1 }) as `0x${string}`,
+    policy: { maxBlockLag: 50, maxAgeSeconds: 900, minSources: 2 },
+    sources: [],
+    chainHead: { chainId: 1, block: 1 },
+    payment: { network: 'hedera-testnet', amount: '1', asset: 'HBAR', payer: null, transaction: null },
+    issuedAt: 1,
+  };
+  const digest = digestOf(body);
+  const signature = await account.signMessage({ message: { raw: digest } });
+  const v = await verifySignedReceipt({
+    digest,
+    signature,
+    signer: account.address,
+    body,
+  });
+  assert.equal(v.digestMatches, true);
+  assert.equal(v.signatureValid, true);
+  assert.equal(v.recoveredSigner?.toLowerCase(), account.address.toLowerCase());
+});
+
+test('withBlockConstraint injects historical block variables', async () => {
+  const { withBlockConstraint } = await import('../src/graph.js');
+  const q =
+    'query PMMarkets($first: Int!) { _meta { deployment } markets(first: $first, orderBy: totalValueLockedUSD) { id } }';
+  const out = withBlockConstraint(q, 'markets');
+  assert.match(out, /\$smBlock: Int!/);
+  assert.match(out, /_meta\(block: \{ number: \$smBlock \}\)/);
+  assert.match(out, /markets\(block: \{ number: \$smBlock \},/);
+});
+
 test('freshness prefers true chain head over the best-indexed peer', () => {
   const f = measureFreshness(100, 1000, 110, 105, 1000);
   assert.equal(f.reference, 'chain-head');

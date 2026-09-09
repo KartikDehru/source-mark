@@ -49,12 +49,17 @@ export async function queryGraph(
   variables: Record<string, unknown>,
   rowsPath: string,
   timeoutMs = 12_000,
+  atBlock?: number,
 ): Promise<GraphResult | GraphFailure> {
   const started = Date.now();
 
   if (!config.graph.apiKey) {
     return { ok: false, error: 'NO_GRAPH_API_KEY', latencyMs: 0 };
   }
+
+  const finalQuery = atBlock === undefined ? query : withBlockConstraint(query, rowsPath);
+  const finalVars =
+    atBlock === undefined ? variables : { ...variables, smBlock: atBlock };
 
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
@@ -63,7 +68,7 @@ export async function queryGraph(
     const res = await fetch(endpointFor(source), {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ query, variables }),
+      body: JSON.stringify({ query: finalQuery, variables: finalVars }),
       signal: controller.signal,
     });
 
@@ -122,4 +127,33 @@ export async function queryGraph(
   } finally {
     clearTimeout(timer);
   }
+}
+
+/**
+ * Pin a family query to a historical block so a receipt can be re-derived.
+ * Injects `$__smBlock` and `block: { number: $__smBlock }` on `_meta` and the
+ * family's row collection.
+ */
+export function withBlockConstraint(query: string, rowsPath: string): string {
+  let q = query;
+  if (!q.includes('$smBlock')) {
+    if (/query\s+\w+\s*\([^)]*\)/.test(q)) {
+      q = q.replace(/query\s+(\w+)\s*\(([^)]*)\)/, (_m, name: string, args: string) => {
+        const trimmed = args.trim();
+        const next = trimmed.length ? `${trimmed}, $smBlock: Int!` : `$smBlock: Int!`;
+        return `query ${name}(${next})`;
+      });
+    } else {
+      q = q.replace(/query\s+(\w+)\s*\{/, 'query $1($smBlock: Int!) {');
+    }
+  }
+  if (!/_meta\s*\(/.test(q)) {
+    q = q.replace(/_meta\s*\{/, '_meta(block: { number: $smBlock }) {');
+  }
+  const field = rowsPath.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const re = new RegExp(`\\b${field}\\s*\\(`);
+  if (!new RegExp(`\\b${field}\\s*\\([^)]*block\\s*:`).test(q)) {
+    q = q.replace(re, `${rowsPath}(block: { number: $smBlock }, `);
+  }
+  return q;
 }

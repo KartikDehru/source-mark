@@ -1,8 +1,10 @@
-import { keccak256, toHex } from 'viem';
+import { keccak256, recoverMessageAddress, toHex } from 'viem';
 import { privateKeyToAccount } from 'viem/accounts';
 import { config } from './config.js';
 import type { Answer, SourceReport } from './resolver.js';
 import type { FreshnessPolicy } from './registry.js';
+
+import type { HcsAnchor } from './hcs.js';
 
 /**
  * A receipt is the evidence a third party needs to check our work later: the
@@ -11,6 +13,8 @@ import type { FreshnessPolicy } from './registry.js';
  * re-derive the claim and, if it does not reproduce, open a dispute.
  *
  * The chain is the authority; the receipt is a pointer to where to look.
+ * When HCS anchoring is configured, the digest is also published to a Hedera
+ * consensus topic so existence-at-time does not depend on our store alone.
  */
 
 export interface ReceiptSourceAnchor {
@@ -46,6 +50,8 @@ export interface SignedReceipt {
   signature: `0x${string}` | null;
   signer: `0x${string}` | null;
   body: ReceiptBody;
+  /** Hedera Consensus Service publication of this digest, when configured. */
+  hcs?: HcsAnchor | null;
 }
 
 /** Deterministic JSON: keys sorted at every level, no whitespace. */
@@ -120,4 +126,56 @@ export async function issueReceipt(input: {
 
   const signature = await account.signMessage({ message: { raw: digest } });
   return { digest, signature, signer: account.address, body };
+}
+
+export interface ReceiptVerification {
+  digestMatches: boolean;
+  recomputedDigest: `0x${string}`;
+  /** null when the receipt was never signed */
+  signatureValid: boolean | null;
+  recoveredSigner: `0x${string}` | null;
+  claimedSigner: `0x${string}` | null;
+}
+
+/**
+ * Recompute the body digest and recover the EIP-191 signer from the signature.
+ * Anyone with the receipt JSON can run the same checks offline.
+ */
+export async function verifySignedReceipt(receipt: SignedReceipt): Promise<ReceiptVerification> {
+  const recomputedDigest = digestOf(receipt.body);
+  const digestMatches = recomputedDigest.toLowerCase() === receipt.digest.toLowerCase();
+
+  if (!receipt.signature) {
+    return {
+      digestMatches,
+      recomputedDigest,
+      signatureValid: null,
+      recoveredSigner: null,
+      claimedSigner: receipt.signer,
+    };
+  }
+
+  try {
+    const recoveredSigner = await recoverMessageAddress({
+      message: { raw: receipt.digest },
+      signature: receipt.signature,
+    });
+    const signerMatches =
+      !receipt.signer || recoveredSigner.toLowerCase() === receipt.signer.toLowerCase();
+    return {
+      digestMatches,
+      recomputedDigest,
+      signatureValid: digestMatches && signerMatches,
+      recoveredSigner,
+      claimedSigner: receipt.signer,
+    };
+  } catch {
+    return {
+      digestMatches,
+      recomputedDigest,
+      signatureValid: false,
+      recoveredSigner: null,
+      claimedSigner: receipt.signer,
+    };
+  }
 }

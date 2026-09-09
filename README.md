@@ -38,7 +38,7 @@ GET /v1/reads/:family?metric=<metric>&asset=<symbol>
 3. **Fan out across a schema family.** The registry maps the family to N pinned deployment IDs; the same query goes to all of them.
 4. **Enforce provenance.** Every source must be within the block-lag and age bounds, must report no indexing errors, and must match its pinned deployment ID. Failures are dropped, with a reason.
 5. **Refuse, or answer.** Below quorum → `409 REFUSED`, and the payment is **never settled**. Above quorum → settle, then answer.
-6. **Receipt.** Signed, naming every contributing deployment and the exact block its claim rests on.
+6. **Receipt.** Signed, naming every contributing deployment and the exact block its claim rests on. When HCS is configured, the digest is also published to a Hedera consensus topic.
 7. **Split.** The settled amount goes to the sources that answered, minus a routing fee, with a slice held back unvested.
 8. **Dispute.** Anyone can re-derive a receipt. If it's false, the buyer is refunded from the responsible source's unvested holdback.
 
@@ -242,7 +242,7 @@ The thing worth pointing at is what *doesn't* change. Both channels run one `com
 | Gateway | TypeScript · [Hono](https://hono.dev) · Node 22 |
 | Data | The Graph decentralized gateway, standardized schemas, pinned deployment IDs |
 | Payments | x402 v2 · `exact` scheme · `hedera:testnet` · [Blocky402](https://blocky402.com) facilitator · `@x402/hedera` |
-| Receipts | keccak256 over canonical JSON, EIP-191 signed via viem |
+| Receipts | keccak256 over canonical JSON, EIP-191 signed via viem · digests also published to an [HCS topic](https://hashscan.io/testnet/topic/0.0.10444789) when `HCS_TOPIC_ID` is set |
 | Contract | Solidity 0.8.24 — `contracts/SourcePayouts.sol` |
 | Agents | MCP server + `SKILL.md` in `mcp/` |
 

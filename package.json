@@ -26,9 +26,13 @@
     "payouts:status": "tsx scripts/payouts-status.ts",
     "payouts:set-arbiter": "tsx scripts/set-arbiter.ts",
     "consent:demo": "tsx scripts/consent-demo.ts",
+    "payouts:register": "tsx scripts/register-sources.ts",
+    "claim:demo": "tsx scripts/claim-demo.ts",
+    "hcs:setup": "tsx scripts/hcs-setup.ts",
     "tunnel": "tsx scripts/tunnel.ts"
   },
   "dependencies": {
+    "@hashgraph/sdk": "^2.81.0",
     "@hono/node-server": "^1.15.0",
     "@modelcontextprotocol/sdk": "^1.30.0",
     "@x402/hedera": "^2.25.0",

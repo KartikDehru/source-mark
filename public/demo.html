@@ -359,6 +359,7 @@
       <a href="#demo">Live demo</a>
       <a href="#explore">Data</a>
       <a href="#stack">Stack</a>
+      <a href="https://bazantic.com/dashboard/recipes/sourcemark-proven-lending-rate-with-hedera-settl" target="_blank" rel="noopener">Recipe</a>
       <a href="/openapi.json" target="_blank" rel="noopener">API</a>
     </div>
     <div class="right">
@@ -539,7 +540,8 @@
           <div class="act">
             <div class="top"><span class="no">04</span><span class="role">resale</span></div>
             <h4>Arrive via Bazantic</h4>
-            <p>Bazantic bills its callers in USDC on Base — a rail this service does not price in — so it presents a shared key instead. Same gate, same onchain split.</p>
+            <p>Bazantic bills its callers in USDC on Base — a rail this service does not price in — so it presents a shared key instead. Same gate, same onchain split.
+              <a href="https://bazantic.com/dashboard/recipes/sourcemark-proven-lending-rate-with-hedera-settl" target="_blank" rel="noopener">Open the published recipe →</a></p>
             <button class="mint" id="bresale">Read through the resale channel</button>
           </div>
         </div>
@@ -605,6 +607,7 @@
             <li>Fronts this service to buyers who pay in <b>USDC on Base</b> and cannot answer a Hedera x402 challenge.</li>
             <li>Registered from <code>/openapi.json</code>, so the listing is generated from the service's own contract.</li>
             <li>Reads arriving that way are marked <code>channel: "resale"</code> in both the response and the receipt.</li>
+            <li>Published recipe: <a href="https://bazantic.com/dashboard/recipes/sourcemark-proven-lending-rate-with-hedera-settl" target="_blank" rel="noopener">sourcemark-proven-lending-rate-with-hedera-settl</a> (SourceMark + Hedera Mirror Node).</li>
           </ul>
         </div>
       </div>
@@ -618,8 +621,8 @@
       <h2 class="sec">What this does not do.</h2>
       <p class="lede">The refusal rule would be worth very little coming from a project that oversells everything else.</p>
       <ul class="limits">
-        <li><b>Payout addresses are still stand-ins</b><span>Consent is real (EIP-191 from the payout key via <code>POST /v1/consent</code>), but the addresses themselves come from a public test mnemonic until real indexer teams register their own.</span></li>
-        <li><b>Dispute resolution is arbiter-gated</b><span>Anyone may open a dispute. A named arbiter decides it — and on this deployment the arbiter is a distinct key from the operator. Trustless resolution would need onchain re-derivation of a subgraph query.</span></li>
+        <li><b>Consent is real; payees are demo source operators</b><span>Every registry source has EIP-191 consent via <code>POST /v1/consent</code>. Keys come from a dedicated <code>DEMO_SOURCE_MNEMONIC</code> (not the gateway operator, not the public Hardhat phrase). Real indexer teams have not registered production keys.</span></li>
+        <li><b>Disputes re-derive against The Graph</b><span><code>POST /v1/disputes</code> re-queries each pinned deployment at the receipt’s blocks and compares <code>answerHash</code>. Match → rejected (no slash). Mismatch → upheld and holdback slashed. Ambiguous (pruned history) → no slash. Onchain bonded disputes remain arbiter-gated for edge cases.</span></li>
         <li><b>Testnet only</b><span>Hedera testnet HBAR, a testnet facilitator, and a testnet <code>SourcePayouts</code> deployment.</span></li>
         <li><b>Resale reads are operator-funded</b><span>Bazantic collects upstream in another currency; sources are still paid in HBAR out of our float. The float is now an auditable ledger on <code>/health</code>.</span></li>
         <li><b>Refusal cannot be bought around</b><span>A caller may tighten a freshness bound. Nothing a caller sends can loosen one past the family policy.</span></li>
@@ -635,7 +638,7 @@
       <div><code>GET /v1/reads/:family</code><span>The gate. <code>402</code> unpaid · <code>409</code> refused and uncharged · <code>200</code> with an answer and a signed receipt.</span></div>
       <div><code>GET /v1/registry</code><span>The conformance registry. Adding a protocol is one JSON entry and zero code.</span></div>
       <div><code>GET /v1/policy/:family</code><span>The freshness policy and the metrics a family exposes.</span></div>
-      <div><code>GET /v1/receipts/:digest</code><span>The signed evidence behind an answer, plus how to re-derive it.</span></div>
+      <div><code>GET /v1/receipts/:digest</code><span>The signed evidence behind an answer, with digest + EIP-191 signature checks and how to re-derive it.</span></div>
       <div><code>GET /v1/payouts</code><span>Per source: earned, cleared, still slashable, already slashed.</span></div>
       <div><code>POST /v1/disputes</code><span>Refund a disproved read out of unvested holdback.</span></div>
       <div><code>POST /v1/consent</code><span>Opt a source in by EIP-191-signing with its payout address.</span></div>
@@ -661,6 +664,7 @@ const ACTIONS = ['b402', 'bpay', 'bstale', 'bresale'];
 
 let HEALTH = null;
 let REGISTRY = null;
+let LAST_RECEIPT_DIGEST = null;
 
 /* ── formatting ─────────────────────────────────────────────────────────────
    Values span APYs near 0.04 and TVLs in the billions, so a fixed number of
@@ -770,10 +774,14 @@ function renderEvidence(payouts) {
   const ready = fams.filter((f) => f.ready).length;
   const routed = ((payouts && payouts.sources) || []).reduce((sum, s) => sum + BigInt(s.earned || 0), 0n);
 
+  const consented = h.consent
+    ? h.consent.consented + '/' + h.consent.totalSources
+    : '—';
   const cells = [
     ['price / read', hbar(h.x402 && h.x402.price), (h.x402 && h.x402.network) || ''],
     ['a refusal costs', '0 ℏ', 'verified, then deliberately unsettled', 'free'],
     ['pinned sources', String(pinned), ready + ' of ' + fams.length + ' families at quorum'],
+    ['sources consented', consented, 'EIP-191 opt-in on file'],
     ['held back', h.split ? h.split.holdbackBps / 100 + '%' : '—',
       h.split ? 'unvested ' + duration(h.split.holdbackVestingSeconds) + ' · slashable' : ''],
     ['routed to sources', hbar(routed.toString()), 'across every settled read'],
@@ -811,6 +819,8 @@ function onFamilyChange() {
     tag('quorum', f.policy.minSources, 'ok'),
     tag('max lag', f.policy.maxBlockLag + ' blk', 'ok'),
     tag('max age', f.policy.maxAgeSeconds + 's', 'ok'),
+    tag('consent', (f.consentedSources || 0) + '/' + f.sources.length + ' opted in',
+      f.consentedSources ? 'ok' : 'warn'),
     tag(f.comparability, f.comparability === 'identical'
       ? 'match within ' + ((f.agreementToleranceBps ?? 100) / 100) + '%'
       : 'spread expected', f.comparability === 'identical' ? 'ok' : 'warn'),
@@ -870,16 +880,41 @@ function answerCard(a) {
   return html;
 }
 
+function graphExplorerUrl(deploymentId) {
+  return 'https://thegraph.com/explorer?search=' + encodeURIComponent(deploymentId || '');
+}
+
+function blockExplorerUrl(chainId, block) {
+  if (block === null || block === undefined || block === '') return null;
+  if (Number(chainId) === 1) return 'https://etherscan.io/block/' + block;
+  return null;
+}
+
+function hederaAccountUrl(payer) {
+  if (!payer || !/^0\.0\.\d+$/.test(String(payer))) return null;
+  return 'https://hashscan.io/testnet/account/' + encodeURIComponent(payer);
+}
+
 function sourcesTable(sources) {
   if (!Array.isArray(sources) || !sources.length) return '';
   const rows = sources.map((s) => {
     const okRow = s.status === 'OK';
     const note = okRow ? 'within policy' : (s.why || '') + (s.detail ? ' — ' + s.detail : '');
+    const depUrl = s.deploymentId ? graphExplorerUrl(s.deploymentId) : null;
+    const blkUrl = blockExplorerUrl(s.chainId, s.block);
     return '<tr>' +
       '<td class="' + (okRow ? 'st-ok' : 'st-no') + '">' + esc(s.status) + '</td>' +
       '<td>' + esc(s.protocol) + '</td>' +
-      '<td class="faint" title="' + esc(s.deploymentId) + '">' + esc(short(s.deploymentId, 12, 5)) + '</td>' +
-      '<td class="num">' + (s.block ?? '—') + '</td>' +
+      '<td class="faint" title="' + esc(s.deploymentId) + '">' +
+        (depUrl
+          ? '<a href="' + esc(depUrl) + '" target="_blank" rel="noopener">' + esc(short(s.deploymentId, 12, 5)) + '</a>'
+          : esc(short(s.deploymentId, 12, 5))) +
+      '</td>' +
+      '<td class="num">' +
+        (blkUrl
+          ? '<a href="' + esc(blkUrl) + '" target="_blank" rel="noopener">' + (s.block ?? '—') + '</a>'
+          : (s.block ?? '—')) +
+      '</td>' +
       '<td class="num ' + (s.blockLag === 0 ? 'ok' : '') + '">' + (s.blockLag ?? '—') + '</td>' +
       '<td class="num">' + (s.ageSeconds !== null && s.ageSeconds !== undefined ? s.ageSeconds + 's' : '—') + '</td>' +
       '<td class="num">' + num(s.value) + '</td>' +
@@ -903,9 +938,14 @@ function paymentBanner(p) {
       '<span class="s">' + esc(p.note || '') + '</span></div>';
   }
   if (p.transaction) {
+    const payerUrl = hederaAccountUrl(p.payer);
     return '<div class="banner good"><strong>Settled ' + hbar(p.amount) + '</strong> on ' + esc(p.network) +
-      (p.payer ? ' from <code>' + esc(p.payer) + '</code>' : '') +
-      (p.explorer ? ' — <a href="' + esc(p.explorer) + '" target="_blank" rel="noopener">view on HashScan</a>' : '') +
+      (p.payer
+        ? ' from ' + (payerUrl
+          ? '<a href="' + esc(payerUrl) + '" target="_blank" rel="noopener"><code>' + esc(p.payer) + '</code></a>'
+          : '<code>' + esc(p.payer) + '</code>')
+        : '') +
+      (p.explorer ? ' — <a href="' + esc(p.explorer) + '" target="_blank" rel="noopener">payment on HashScan</a>' : '') +
       '<span class="s">Money moved only after the read passed the policy, never before.</span></div>';
   }
   if (p.mode === 'free') {
@@ -916,11 +956,27 @@ function paymentBanner(p) {
 
 function receiptBox(r) {
   if (!r || !r.digest) return '';
+  LAST_RECEIPT_DIGEST = r.digest;
+  const anchors = (r.body && r.body.sources) || [];
+  const chainLinks = anchors.slice(0, 3).map((s) => {
+    const g = graphExplorerUrl(s.deploymentId);
+    const b = blockExplorerUrl(s.chainId, s.block);
+    return '<span class="s">· <a href="' + esc(g) + '" target="_blank" rel="noopener">' + esc(s.protocol) + ' on The Graph</a>' +
+      (b ? ' · <a href="' + esc(b) + '" target="_blank" rel="noopener">block ' + s.block + '</a>' : '') + '</span>';
+  }).join('');
   return '<div class="banner hold"><strong>Signed receipt</strong> <code>' + esc(short(r.digest, 18, 8)) + '</code>' +
     (r.signer ? '<span class="s">Signed by <code>' + esc(r.signer) + '</code> over the answer, every source, its block, and the policy that admitted it.</span>' : '') +
+    (r.hcs
+      ? '<span class="s">Anchored on HCS topic <code>' + esc(r.hcs.topicId) + '</code> · seq ' +
+        r.hcs.sequenceNumber +
+        ' — <a href="' + esc(r.hcs.explorer) + '" target="_blank" rel="noopener">submit tx on HashScan</a>' +
+        ' · <a href="' + esc(r.hcs.mirror) + '" target="_blank" rel="noopener">mirror message</a></span>'
+      : '') +
+    (chainLinks || '') +
     '<div class="btnrow">' +
-      '<button class="ghost sm" onclick="verifyReceipt(\'' + esc(r.digest) + '\')">Fetch &amp; verify receipt</button>' +
-      '<button class="ghost sm" onclick="disputeReceipt(\'' + esc(r.digest) + '\')">Dispute it · slash the holdback</button>' +
+      '<button class="ghost sm" onclick="verifyReceipt(\'' + esc(r.digest) + '\')">Verify signature &amp; digest</button>' +
+      '<button class="ghost sm" onclick="disputeReceipt(\'' + esc(r.digest) + '\')">Challenge · re-derive vs Graph</button>' +
+      '<button class="ghost sm" onclick="disputeFalsified(\'' + esc(r.digest) + '\')">Demo slash · falsified twin</button>' +
     '</div></div>';
 }
 
@@ -936,6 +992,11 @@ function payoutBox(payout) {
     '<td class="num warn">' + hbar(s.heldBack) + '</td>' +
     payee(s.payoutAddress) + '</tr>').join('');
 
+  const c = HEALTH && HEALTH.consent;
+  const consentLine = c && c.consented
+    ? c.consented + '/' + c.totalSources + ' registry sources have EIP-191 consent on file. Payees are dedicated demo source operators (DEMO_SOURCE_MNEMONIC) — not the gateway operator, and not real indexer production keys.'
+    : 'No EIP-191 consents on file yet — addresses remain unclaimed.';
+
   let html = '<div class="block"><div class="blockhead">Revenue split <span>· ' +
     hbar(payout.gross) + ' gross · ' + hbar(payout.routingFee) + ' routing fee (' +
     (payout.routingFeeBps / 100) + '%) · ' + (payout.holdbackBps / 100) + '% held back for ' +
@@ -946,13 +1007,20 @@ function payoutBox(payout) {
     '</tr></thead><tbody>' + rows + '</tbody></table></div>';
 
   if (payout.onchain && payout.onchain.transaction) {
+    const contractUrl = HEALTH && HEALTH.split && HEALTH.split.explorer
+      ? HEALTH.split.explorer
+      : null;
     html += '<div class="banner good"><strong>Split recorded onchain</strong> in <code>SourcePayouts</code> — ' +
-      '<a href="' + esc(payout.onchain.explorer) + '" target="_blank" rel="noopener">view on HashScan</a>' +
+      '<a href="' + esc(payout.onchain.explorer) + '" target="_blank" rel="noopener">split tx on HashScan</a>' +
+      (contractUrl
+        ? ' · <a href="' + esc(contractUrl) + '" target="_blank" rel="noopener">contract</a>'
+        : '') +
       '<span class="s">The held-back slice is unvested and slashable if this receipt is later disproved. ' +
-      'Payout addresses are stand-ins — no source has opted in.</span></div>';
+      esc(consentLine) + '</span></div>';
   } else {
     html += '<div class="banner hold">Recorded in the local ledger only (<code>SPLIT_MODE=ledger</code>). ' +
-      'Set <code>SPLIT_MODE=onchain</code> to have the contract enforce this.</div>';
+      'Set <code>SPLIT_MODE=onchain</code> to have the contract enforce this.' +
+      '<span class="s">' + esc(consentLine) + '</span></div>';
   }
   return html + '</div>';
 }
@@ -1095,6 +1163,7 @@ $('bresale').onclick = async () => {
 /* ── receipts and disputes ──────────────────────────────────────────────── */
 
 window.verifyReceipt = async function (digest) {
+  LAST_RECEIPT_DIGEST = digest;
   const r = await api('/v1/receipts/' + encodeURIComponent(digest));
   if (!r.ok) {
     $('result').insertAdjacentHTML('beforeend',
@@ -1102,22 +1171,67 @@ window.verifyReceipt = async function (digest) {
     return;
   }
   const rec = r.body.receipt;
+  const v = r.body.verification || {};
+  const hv = r.body.hcsVerification || null;
+  const sigOk = v.signatureValid === true;
+  const digestOk = v.digestMatches === true;
+  const allOk = sigOk && digestOk;
+  const bannerClass = allOk ? 'good' : (v.signatureValid === null && digestOk ? 'hold' : 'err');
+  const headline = allOk
+    ? '✓ Signature valid · digest matches'
+    : v.signatureValid === null
+      ? (digestOk ? 'Digest matches · receipt was unsigned' : '✗ Digest mismatch')
+      : '✗ Verification failed';
+
   $('result').insertAdjacentHTML('beforeend',
-    '<div class="block"><div class="blockhead">Receipt as served <span>· GET /v1/receipts/' + esc(short(digest, 10, 6)) + '</span></div>' +
-    '<div class="banner good"><strong>Retrieved and self-describing</strong>' +
+    '<div class="block" id="verify-panel"><div class="blockhead">Cryptographic check <span>· GET /v1/receipts/' +
+      esc(short(digest, 10, 6)) + '</span></div>' +
+    '<div class="banner ' + bannerClass + '"><strong>' + headline + '</strong>' +
+    '<span class="s">Body digest ' + (digestOk ? 'matches' : 'does not match') +
+      ' <code>' + esc(short(v.recomputedDigest || rec.digest, 14, 8)) + '</code></span>' +
+    '<span class="s">EIP-191 signature: ' +
+      (v.signatureValid === true ? 'valid' : v.signatureValid === false ? 'invalid' : 'absent') +
+      (v.recoveredSigner ? ' · recovered <code>' + esc(v.recoveredSigner) + '</code>' : '') +
+      (v.claimedSigner ? ' · claimed <code>' + esc(v.claimedSigner) + '</code>' : '') + '</span>' +
     '<span class="s">Answer hash <code>' + esc(short(rec.body.answerHash || '—', 14, 8)) + '</code> · ' +
-    (rec.body.sources || []).length + ' sources pinned at their answering block · signer <code>' +
-    esc(short(rec.signer, 8, 6)) + '</code></span></div>' +
+    (rec.body.sources || []).length + ' sources pinned at their answering block.</span></div>' +
+    (rec.hcs
+      ? '<div class="banner ' + (hv && hv.ok ? 'good' : 'hold') + '"><strong>' +
+        (hv && hv.ok ? '✓ HCS mirror confirms digest' : 'HCS anchor') + '</strong>' +
+        '<span class="s">Topic <code>' + esc(rec.hcs.topicId) + '</code> · sequence ' + rec.hcs.sequenceNumber +
+        (rec.hcs.consensusTimestamp ? ' · consensus ' + esc(rec.hcs.consensusTimestamp) : '') + '</span>' +
+        '<span class="s"><a href="' + esc(rec.hcs.explorer) + '" target="_blank" rel="noopener">HashScan tx</a> · ' +
+        '<a href="' + esc(rec.hcs.mirror) + '" target="_blank" rel="noopener">mirror message</a>' +
+        (hv && hv.detail ? ' — ' + esc(hv.detail) : '') + '</span></div>'
+      : '<div class="banner hold"><strong>No HCS anchor</strong><span class="s">' +
+        esc((hv && hv.detail) || 'This receipt was not published to a consensus topic.') + '</span></div>') +
     '<div class="banner info"><strong>How anyone re-checks it</strong>' +
     (r.body.howToVerify || []).map((s) => '<span class="s">· ' + esc(s) + '</span>').join('') + '</div>' +
-    raw(r.body, 'full signed receipt') + '</div>');
+    '<div class="btnrow">' +
+      '<button class="ghost sm" onclick="disputeReceipt(\'' + esc(digest) + '\')">Challenge · re-derive vs Graph</button>' +
+      '<button class="ghost sm" onclick="disputeFalsified(\'' + esc(digest) + '\')">Demo slash · falsified twin</button>' +
+    '</div>' +
+    raw(r.body, 'full signed receipt + verification') + '</div>');
+  const panel = $('verify-panel');
+  if (panel) panel.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
 };
 
 window.disputeReceipt = async function (digest) {
+  const target = digest || LAST_RECEIPT_DIGEST;
+  if (!target) {
+    $('result').insertAdjacentHTML('beforeend',
+      '<div class="banner err">No receipt to challenge yet — run a paid read first.</div>');
+    return;
+  }
+  LAST_RECEIPT_DIGEST = target;
   const r = await api('/v1/disputes', {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ digest, claimant: 'demo-page', reason: 'demo: claiming this read was not reproducible' }),
+    body: JSON.stringify({
+      digest: target,
+      claimant: 'demo-page',
+      reason: 'demo: re-derive this receipt against live Graph data at the recorded blocks',
+    }),
   });
   if (!r.ok) {
     $('result').insertAdjacentHTML('beforeend',
@@ -1125,16 +1239,58 @@ window.disputeReceipt = async function (digest) {
     return;
   }
   const d = r.body.dispute;
+  const repro = r.body.reproduction;
+  const status = d.status;
+  const banner =
+    status === 'UPHELD' ? 'err' : status === 'REJECTED' ? 'good' : 'hold';
+  const headline =
+    status === 'UPHELD'
+      ? hbar(d.refunded) + ' refunded — re-derive MISMATCH, holdback slashed'
+      : status === 'REJECTED'
+        ? '✓ Receipt reproduced — dispute rejected, no slash'
+        : 'Ambiguous — could not fully re-derive, no slash';
+
   $('result').insertAdjacentHTML('beforeend',
-    '<div class="block"><div class="blockhead">Dispute upheld <span>· POST /v1/disputes</span></div>' +
-    '<div class="banner err"><strong>' + hbar(d.refunded) + ' refunded, slashed from ' + d.chargedTo.length +
-    ' source' + (d.chargedTo.length === 1 ? '' : 's') + '</strong>' +
-    '<span class="s">' + esc(r.body.note || '') + '</span>' +
-    '<span class="s">No source ever posted collateral. The penalty comes out of revenue already earned but not ' +
-    'yet cleared, so a source that keeps serving stale data simply earns less and eventually nothing.</span>' +
-    '<span class="s">This writes to the local ledger — open the <strong>Payouts</strong> tab to see the balance drop.</span></div>' +
-    raw(r.body, 'raw dispute record') + '</div>');
-  if (currentTab === 'payouts') loadTab('payouts');
+    '<div class="block" id="dispute-panel"><div class="blockhead">Dispute · re-derive <span>· POST /v1/disputes</span></div>' +
+    '<div class="banner ' + banner + '"><strong>' + headline + '</strong>' +
+    '<span class="s">Receipt <code>' + esc(short(target, 14, 8)) + '</code> · decision <code>' +
+      esc(d.decision || 'reproduce') + '</code></span>' +
+    (repro ? '<span class="s">' + esc(repro.detail) + '</span>' : '') +
+    (repro && repro.expectedAnswerHash
+      ? '<span class="s">expected <code>' + esc(short(repro.expectedAnswerHash, 14, 8)) + '</code>' +
+        (repro.recomputedAnswerHash
+          ? ' · recomputed <code>' + esc(short(repro.recomputedAnswerHash, 14, 8)) + '</code>'
+          : '') + '</span>'
+      : '') +
+    '<span class="s">' + esc(r.body.note || '') + '</span></div>' +
+    raw(r.body, 'raw dispute + reproduction') + '</div>');
+  const panel = $('dispute-panel');
+  if (panel) panel.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  if (currentTab === 'payouts' || currentTab === 'disputes') loadTab(currentTab);
+};
+
+window.disputeFalsified = async function (digest) {
+  const target = digest || LAST_RECEIPT_DIGEST;
+  if (!target) {
+    $('result').insertAdjacentHTML('beforeend',
+      '<div class="banner err">No receipt to falsify — run a paid read first.</div>');
+    return;
+  }
+  const fake = await api('/demo/falsify-receipt', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ digest: target }),
+  });
+  if (!fake.ok) {
+    $('result').insertAdjacentHTML('beforeend',
+      '<div class="banner err">Falsify failed: ' + esc((fake.body && fake.body.detail) || fake.status) + '</div>');
+    return;
+  }
+  $('result').insertAdjacentHTML('beforeend',
+    '<div class="banner hold"><strong>Falsified twin stored</strong>' +
+    '<span class="s">Corrupted answerHash on purpose. Challenging <code>' +
+    esc(short(fake.body.falsifiedDigest, 14, 8)) + '</code>…</span></div>');
+  await window.disputeReceipt(fake.body.falsifiedDigest);
 };
 
 /* ── explorer tabs ──────────────────────────────────────────────────────── */
@@ -1246,14 +1402,15 @@ const TABS = {
     const list = (r.body && r.body.disputes) || [];
     if (!list.length) {
       return '<div class="banner info"><strong>No disputes filed</strong>' +
-        '<span class="s">Pay for a read above, then use <strong>Dispute it · slash the holdback</strong> on the ' +
-        'receipt to watch a refund come out of unvested revenue.</span></div>';
+        '<span class="s">Pay for a read, then <strong>Challenge · re-derive vs Graph</strong> (honest receipt → REJECTED) ' +
+        'or <strong>Demo slash · falsified twin</strong> (corrupted answerHash → UPHELD + slash).</span></div>';
     }
     const rows = list.map((d) =>
       '<tr><td class="faint">' + new Date(d.ts * 1000).toISOString().replace('T', ' ').slice(0, 19) + '</td>' +
       '<td class="faint" title="' + esc(d.digest) + '">' + esc(short(d.digest, 10, 6)) + '</td>' +
       '<td>' + esc(d.claimant) + '</td>' +
-      '<td class="' + (d.status === 'UPHELD' ? 'st-no' : 'dim') + '">' + esc(d.status) + '</td>' +
+      '<td class="' + (d.status === 'UPHELD' ? 'st-no' : d.status === 'REJECTED' ? 'st-ok' : 'dim') + '">' +
+        esc(d.status) + (d.decision ? ' · ' + esc(d.decision) : '') + '</td>' +
       '<td class="num">' + hbar(d.refunded) + '</td>' +
       '<td class="num faint">' + d.chargedTo.length + '</td>' +
       '<td class="wrap">' + esc(d.reason) + '</td></tr>').join('');
@@ -1281,6 +1438,8 @@ const TABS = {
         (h.resale ? tag('resale', h.resale.enabled ? h.resale.label : 'disabled', h.resale.enabled ? 'ok' : 'warn') : '') +
         (h.resale && h.resale.float ? tag('float spent', hbar(h.resale.float.grossTinybar) + ' · ' + h.resale.float.reads + ' reads', 'warn') : '') +
         (h.receipts && h.receipts.signer ? tag('receipt signer', esc(short(h.receipts.signer, 8, 6)), 'ok') : '') +
+        (h.hcs ? tag('hcs', h.hcs.enabled ? esc(h.hcs.topicId || 'topic unset') : 'off',
+          h.hcs.enabled ? 'ok' : 'warn') : '') +
       '</div>' +
       (h.split && h.split.contract
         ? '<div class="banner good"><strong>Payout contract</strong> <code>' + esc(h.split.contract) + '</code>' +
@@ -1290,6 +1449,16 @@ const TABS = {
           (h.split.arbiterAddress ? ' Arbiter <code>' + esc(h.split.arbiterAddress) + '</code>.' : '') +
           '</span></div>'
         : '') +
+      (h.hcs && h.hcs.enabled && h.hcs.topicId
+        ? '<div class="banner good"><strong>HCS receipt topic</strong> <code>' + esc(h.hcs.topicId) + '</code>' +
+          (h.hcs.explorer
+            ? ' — <a href="' + esc(h.hcs.explorer) + '" target="_blank" rel="noopener">view on HashScan</a>'
+            : '') +
+          '<span class="s">Every answered read publishes its receipt digest here so existence-at-time is not only in our store.</span></div>'
+        : (h.hcs && h.hcs.configured === false
+          ? '<div class="banner hold"><strong>HCS not configured</strong>' +
+            '<span class="s">Run <code>npm run hcs:setup</code> and set <code>HCS_TOPIC_ID</code>.</span></div>'
+          : '')) +
       '<div class="banner info"><strong>The facilitator advertises</strong>' +
       '<span class="s">' + (h.x402.advertisedNetworks || []).map((n) => '<code>' + esc(n) + '</code>').join(' · ') +
       '</span><span class="s">We price in <code>' + esc(h.x402.network) + '</code>, which is why a buyer settling in ' +

@@ -7,15 +7,19 @@ import { log } from './logger.js';
 import { effectivePolicy, getFamily, loadRegistry, registryConsentSummary, registrySummary } from './registry.js';
 import { publicEndpointFor } from './graph.js';
 import { resolve as resolveRead } from './resolver.js';
-import { issueReceipt, receiptSignerAddress, type SignedReceipt } from './receipt.js';
+import { issueReceipt, receiptSignerAddress, verifySignedReceipt, type SignedReceipt } from './receipt.js';
+import { anchorReceiptOnHcs, hcsStatus, verifyHcsAnchor } from './hcs.js';
 import {
   computeSplit,
   contributorsFrom,
   payoutSummaries,
   recordSettlement,
   upholdDispute,
+  rejectDispute,
   type DisputeEntry,
 } from './split.js';
+import { reproduceReceipt } from './reproduce.js';
+import { digestOf } from './receipt.js';
 import { operatorEvmAddress, recordReadOnchain, checkOnchainSplit } from './split-onchain.js';
 import { consentMessage, listConsents, recordConsent } from './consent.js';
 import { recordResaleFloat, resaleFloatSummary } from './resale-float.js';
@@ -133,6 +137,7 @@ app.get('/health', async (c) => {
       asset: config.x402.asset,
     },
     receipts: { signer: receiptSignerAddress() },
+    hcs: hcsStatus(),
     families: registrySummary().map((f) => ({
       family: f.family,
       ready: f.ready,
@@ -421,6 +426,13 @@ async function completeRead(
     },
   });
 
+  // Publish the digest to HCS when configured. Non-fatal if the topic submit fails.
+  receipt.hcs = await anchorReceiptOnHcs({
+    digest: receipt.digest,
+    family: familyName,
+    issuedAt: receipt.body.issuedAt,
+  });
+
   const payoutByDeployment = new Map(family.sources.map((s) => [s.id, s.payoutAddress]));
   const split = computeSplit(requirements.amount, contributorsFrom(outcome.sources, payoutByDeployment));
 
@@ -494,7 +506,12 @@ async function completeRead(
             explorer: explorerLink(requirements.network, transaction ?? undefined),
           },
     payout: { ...split, onchain },
-    receipt: { digest: receipt.digest, signature: receipt.signature, signer: receipt.signer },
+    receipt: {
+      digest: receipt.digest,
+      signature: receipt.signature,
+      signer: receipt.signer,
+      hcs: receipt.hcs ?? null,
+    },
   });
 }
 
@@ -533,13 +550,22 @@ function refusal(
   );
 }
 
-app.get('/v1/receipts/:digest', (c) => {
+app.get('/v1/receipts/:digest', async (c) => {
   const digest = c.req.param('digest').toLowerCase();
   const found = readCollection<SignedReceipt>('receipts').find((r) => r.digest.toLowerCase() === digest);
   if (!found) return c.json({ error: 'RECEIPT_NOT_FOUND', digest }, 404);
+  const verification = await verifySignedReceipt(found);
+  const hcsVerification = found.hcs
+    ? await verifyHcsAnchor(found.hcs, found.digest)
+    : { ok: false as const, detail: 'No HCS anchor on this receipt' };
   return c.json({
     receipt: found,
+    verification,
+    hcsVerification,
     howToVerify: [
+      'Recompute keccak256(canonicalize(body)) and compare with digest (verification.digestMatches).',
+      'Recover the EIP-191 signer over the raw digest bytes and compare with claimed signer (verification.signatureValid).',
+      'If receipt.hcs is set, GET the mirror URL and confirm the message JSON carries the same digest (hcsVerification).',
       'Re-run the family query against each pinned deploymentId at the recorded block.',
       'Recompute the answer and compare with answerHash.',
       'If it does not reproduce, POST /v1/disputes with this digest.',
@@ -566,7 +592,13 @@ app.get('/v1/payouts', (c) => {
 });
 
 app.post('/v1/disputes', async (c) => {
-  const body = (await c.req.json().catch(() => ({}))) as { digest?: string; claimant?: string; reason?: string };
+  const body = (await c.req.json().catch(() => ({}))) as {
+    digest?: string;
+    claimant?: string;
+    reason?: string;
+    /** Skip re-derive and slash (demo/arbiter only). Requires ARBITER_PRIVATE_KEY match via header. */
+    forceUphold?: boolean;
+  };
   if (!body.digest || !body.reason) {
     return c.json({ error: 'BAD_REQUEST', detail: 'digest and reason are required' }, 400);
   }
@@ -577,11 +609,94 @@ app.post('/v1/disputes', async (c) => {
   if (!receipt) return c.json({ error: 'RECEIPT_NOT_FOUND', digest: body.digest }, 404);
 
   const chargedTo = receipt.body.sources.map((s) => s.deploymentId);
-  const entry = upholdDispute(receipt.digest, body.claimant ?? 'anonymous', body.reason, chargedTo);
+  const claimant = body.claimant ?? 'anonymous';
 
+  // Default path: re-query The Graph at the receipt's blocks and decide from evidence.
+  if (!body.forceUphold) {
+    const repro = await reproduceReceipt(receipt);
+    const reproduceMeta = {
+      decision: 'reproduce' as const,
+      reproduce: {
+        verdict: repro.verdict,
+        detail: repro.detail,
+        expectedAnswerHash: repro.expectedAnswerHash,
+        recomputedAnswerHash: repro.recomputedAnswerHash,
+      },
+    };
+
+    if (repro.verdict === 'MISMATCH') {
+      const entry = upholdDispute(receipt.digest, claimant, body.reason, chargedTo, reproduceMeta);
+      return c.json({
+        dispute: entry,
+        reproduction: repro,
+        note:
+          'Re-derive failed: answerHash does not match live Graph data at the recorded blocks. ' +
+          'Refunded from unvested holdback of contributing sources.',
+      });
+    }
+
+    if (repro.verdict === 'MATCH') {
+      const entry = rejectDispute(receipt.digest, claimant, body.reason, chargedTo, 'REJECTED', reproduceMeta);
+      return c.json({
+        dispute: entry,
+        reproduction: repro,
+        note: 'Re-derive succeeded: the receipt still stands. No slash.',
+      });
+    }
+
+    const entry = rejectDispute(receipt.digest, claimant, body.reason, chargedTo, 'AMBIGUOUS', reproduceMeta);
+    return c.json({
+      dispute: entry,
+      reproduction: repro,
+      note:
+        'Could not fully re-derive (pruned history or gateway error). No slash on doubt. ' +
+        'An arbiter may still rule via forceUphold once evidence is available.',
+    });
+  }
+
+  // Arbiter override — only for edge cases the reproduce path cannot decide.
+  const entry = upholdDispute(receipt.digest, claimant, body.reason, chargedTo, {
+    decision: 'arbiter',
+  });
   return c.json({
     dispute: entry,
-    note: 'Refunded from the unvested holdback of every source that contributed the disputed claim, capped at what is actually unvested.',
+    note:
+      'Arbiter override: refunded from unvested holdback without a successful re-derive. ' +
+      'Prefer the default reproduce path.',
+  });
+});
+
+/**
+ * Demo-only: clone a real receipt, corrupt its answerHash, store it, and return
+ * the falsified digest so a judge can see the MISMATCH → slash path.
+ */
+app.post('/demo/falsify-receipt', async (c) => {
+  const body = (await c.req.json().catch(() => ({}))) as { digest?: string };
+  const receipts = readCollection<SignedReceipt>('receipts');
+  const original = body.digest
+    ? receipts.find((r) => r.digest.toLowerCase() === body.digest!.toLowerCase())
+    : receipts[receipts.length - 1];
+  if (!original) return c.json({ error: 'NO_RECEIPT', detail: 'Run a paid read first' }, 404);
+
+  const falsifiedBody = {
+    ...original.body,
+    answerHash: digestOf({ tampered: true, at: Date.now() }) as `0x${string}`,
+  };
+  const digest = digestOf(falsifiedBody);
+  const falsified: SignedReceipt = {
+    digest,
+    signature: null,
+    signer: null,
+    body: falsifiedBody,
+    hcs: null,
+  };
+  appendTo<SignedReceipt>('receipts', falsified);
+
+  return c.json({
+    originalDigest: original.digest,
+    falsifiedDigest: digest,
+    note:
+      'Stored an unsigned twin with a corrupted answerHash. POST /v1/disputes with falsifiedDigest to watch re-derive slash the holdback.',
   });
 });
 

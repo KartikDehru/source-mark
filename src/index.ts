@@ -15,6 +15,6 @@ for (const f of families) {
 
 serve({ fetch: app.fetch, port: config.port }, (info) => {
   log.info(`sourcemark listening on http://localhost:${info.port}`);
-  log.info(`payment=${config.x402.mode} split=${config.split.mode} anchor=${config.anchor.mode}`);
+  log.info(`payment=${config.x402.mode} split=${config.split.mode} anchor=${config.anchor.mode} hcs=${config.hcs.enabled && config.hcs.topicId ? config.hcs.topicId : 'off'}`);
   log.info(`try: curl -i "http://localhost:${info.port}/v1/reads/aave-v3-ethereum?metric=supplyAPY&asset=USDC"`);
 });

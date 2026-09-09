@@ -89,6 +89,24 @@ export const config = {
     signingKey: str('RECEIPT_SIGNING_KEY'),
   },
 
+  /**
+   * HCS receipt anchoring. Separate from ANCHOR_MODE (which is chain-head
+   * freshness for subgraph claims). When enabled, every signed receipt digest
+   * is submitted to a public consensus topic so the evidence trail is not only
+   * in our store.
+   *
+   * Defaults the operator to the payout receiver + OPERATOR_PRIVATE_KEY, since
+   * that account already pays gas for onchain splits on this deployment.
+   */
+  hcs: {
+    enabled: str('HCS_ENABLED', 'true') !== 'false',
+    network: oneOf('HCS_NETWORK', ['testnet', 'mainnet'] as const, 'testnet'),
+    topicId: str('HCS_TOPIC_ID'),
+    operatorId: str('HCS_OPERATOR_ID', str('X402_PAY_TO')),
+    operatorKey: str('HCS_OPERATOR_KEY', str('OPERATOR_PRIVATE_KEY')),
+    mirror: str('HEDERA_MIRROR_NODE', 'https://testnet.mirrornode.hedera.com').replace(/\/+$/, ''),
+  },
+
   split: {
     mode: oneOf('SPLIT_MODE', ['ledger', 'onchain'] as const, 'ledger'),
     routingFeeBps: int('ROUTING_FEE_BPS', 1000),
@@ -124,6 +142,13 @@ export function configWarnings(): string[] {
   }
   if (!config.receipts.signingKey) {
     w.push('RECEIPT_SIGNING_KEY is unset: answers will be returned unsigned.');
+  }
+  if (config.hcs.enabled) {
+    if (!config.hcs.topicId) {
+      w.push('HCS_ENABLED but HCS_TOPIC_ID is unset: run `npm run hcs:setup` to create the receipt topic.');
+    } else if (!config.hcs.operatorId || !config.hcs.operatorKey) {
+      w.push('HCS_TOPIC_ID is set but the HCS operator id/key is missing: set HCS_OPERATOR_ID/HCS_OPERATOR_KEY or X402_PAY_TO/OPERATOR_PRIVATE_KEY.');
+    }
   }
   if (config.split.routingFeeBps + config.split.holdbackBps > 10_000) {
     w.push('ROUTING_FEE_BPS + HOLDBACK_BPS exceeds 100%.');

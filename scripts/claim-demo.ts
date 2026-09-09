@@ -14,8 +14,9 @@
  * be 1e10 times too small. Comparing owed-vs-received here is what makes that
  * answer observable instead of assumed.
  *
- * The payee keys come from the public Hardhat test mnemonic on purpose — see
- * registry/families.json. They are stand-ins, and anyone can run this.
+ * The payee keys come from DEMO_SOURCE_MNEMONIC (dedicated demo source
+ * operators — not the public Hardhat mnemonic, and not the gateway operator).
+ * See registry/families.json. Anyone with that mnemonic can run this.
  */
 
 import 'dotenv/config';
@@ -35,7 +36,7 @@ import { privateKeyToAccount, mnemonicToAccount } from 'viem/accounts';
 const RPC = process.env.HEDERA_JSON_RPC ?? 'https://testnet.hashio.io/api';
 const ADDRESS = process.env.SOURCE_PAYOUTS_ADDRESS;
 const OPERATOR_KEY = process.env.OPERATOR_PRIVATE_KEY;
-const MNEMONIC = 'test test test test test test test test test test test junk';
+const MNEMONIC = process.env.DEMO_SOURCE_MNEMONIC;
 
 // The deployment whose payee is addressIndex 0.
 const DEPLOYMENT = 'QmcXE5QVcBcvcaJddPxd8mFs6W9xt7STmwfgguoiM6ddAd';
@@ -88,12 +89,26 @@ async function main(): Promise<void> {
     process.exitCode = 1;
     return;
   }
+  if (!MNEMONIC) {
+    console.error('Need DEMO_SOURCE_MNEMONIC in .env (dedicated demo source keys)');
+    process.exitCode = 1;
+    return;
+  }
 
   const address = getAddress(ADDRESS);
   const publicClient = createPublicClient({ chain: hederaTestnet, transport: http(RPC) });
   const sourceId = keccak256(toBytes(DEPLOYMENT));
 
   const payee = mnemonicToAccount(MNEMONIC, { addressIndex: PAYEE_INDEX });
+  const operatorAccount = privateKeyToAccount(
+    (OPERATOR_KEY.startsWith('0x') ? OPERATOR_KEY : `0x${OPERATOR_KEY}`) as `0x${string}`,
+  );
+
+  if (payee.address.toLowerCase() === operatorAccount.address.toLowerCase()) {
+    console.error('Demo payee must not be the operator — rotate DEMO_SOURCE_MNEMONIC.');
+    process.exitCode = 1;
+    return;
+  }
   const registered = (await publicClient.readContract({
     address,
     abi: ABI,
