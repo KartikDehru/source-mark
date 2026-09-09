@@ -1,4 +1,5 @@
 import 'dotenv/config';
+import { privateKeyToAccount } from 'viem/accounts';
 
 export type AnchorMode = 'rpc' | 'relative';
 export type PaymentMode = 'x402' | 'free';
@@ -98,6 +99,7 @@ export const config = {
     // fee or rule on disputes.
     contractAddress: str('SOURCE_PAYOUTS_ADDRESS'),
     recorderKey: str('OPERATOR_PRIVATE_KEY'),
+    arbiterAddress: str('ARBITER_ADDRESS'),
     jsonRpc: str('HEDERA_JSON_RPC', 'https://testnet.hashio.io/api'),
   },
 
@@ -115,7 +117,7 @@ export const config = {
 export function configWarnings(): string[] {
   const w: string[] = [];
   if (!config.graph.apiKey) {
-    w.push('GRAPH_API_KEY is unset: every read will REFUSE. Live Graph data is required; fixtures are a prize disqualifier.');
+    w.push('GRAPH_API_KEY is unset: every read will REFUSE. Live Graph data is required; fixtures are never substituted.');
   }
   if (config.x402.mode === 'x402' && !config.x402.payTo) {
     w.push('X402_PAY_TO is unset: cannot build payment requirements. Set it or run PAYMENT_MODE=free.');
@@ -125,6 +127,27 @@ export function configWarnings(): string[] {
   }
   if (config.split.routingFeeBps + config.split.holdbackBps > 10_000) {
     w.push('ROUTING_FEE_BPS + HOLDBACK_BPS exceeds 100%.');
+  }
+  if (config.split.mode === 'onchain' && !config.split.arbiterAddress) {
+    w.push(
+      'SPLIT_MODE=onchain but ARBITER_ADDRESS is unset: run `npm run payouts:set-arbiter` after setting a distinct ARBITER_ADDRESS.',
+    );
+  }
+  if (config.split.mode === 'onchain' && config.split.recorderKey && config.split.arbiterAddress) {
+    try {
+      const key = config.split.recorderKey.startsWith('0x')
+        ? (config.split.recorderKey as `0x${string}`)
+        : (`0x${config.split.recorderKey}` as `0x${string}`);
+      const operator = privateKeyToAccount(key).address.toLowerCase();
+      const arbiter = config.split.arbiterAddress.toLowerCase();
+      if (operator === arbiter) {
+        w.push(
+          'ARBITER_ADDRESS equals OPERATOR_PRIVATE_KEY: one party both records reads and rules on disputes. Generate a separate arbiter and run `npm run payouts:set-arbiter`.',
+        );
+      }
+    } catch {
+      w.push('OPERATOR_PRIVATE_KEY is invalid: cannot verify operator/arbiter separation.');
+    }
   }
   return w;
 }

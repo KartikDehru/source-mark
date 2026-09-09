@@ -51,6 +51,20 @@ const RECORD_READ_ABI = [
     inputs: [{ name: '', type: 'bytes32' }],
     outputs: [{ name: '', type: 'address' }],
   },
+  {
+    type: 'function',
+    name: 'operator',
+    stateMutability: 'view',
+    inputs: [],
+    outputs: [{ name: '', type: 'address' }],
+  },
+  {
+    type: 'function',
+    name: 'arbiter',
+    stateMutability: 'view',
+    inputs: [],
+    outputs: [{ name: '', type: 'address' }],
+  },
 ] as const;
 
 /** Native HBAR has 8 decimals; the EVM sees 18. */
@@ -254,6 +268,23 @@ export async function checkOnchainSplit(): Promise<string[]> {
     const code = await publicClient.getCode({ address });
     if (!code || code === '0x') {
       problems.push(`No contract at SOURCE_PAYOUTS_ADDRESS ${address} on chain 296.`);
+      return problems;
+    }
+    const [operator, arbiter] = await Promise.all([
+      publicClient.readContract({ address, abi: RECORD_READ_ABI, functionName: 'operator' }),
+      publicClient.readContract({ address, abi: RECORD_READ_ABI, functionName: 'arbiter' }),
+    ]);
+    if (operator.toLowerCase() === arbiter.toLowerCase()) {
+      problems.push(
+        `Onchain arbiter (${arbiter}) is still the operator. Set ARBITER_ADDRESS to a distinct key and run npm run payouts:set-arbiter.`,
+      );
+    } else if (
+      config.split.arbiterAddress &&
+      getAddress(config.split.arbiterAddress).toLowerCase() !== arbiter.toLowerCase()
+    ) {
+      problems.push(
+        `ARBITER_ADDRESS (${config.split.arbiterAddress}) does not match onchain arbiter (${arbiter}). Run npm run payouts:set-arbiter.`,
+      );
     }
   } catch (err) {
     problems.push(`Could not reach ${config.split.jsonRpc}: ${err instanceof Error ? err.message : String(err)}`);
