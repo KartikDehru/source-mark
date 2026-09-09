@@ -1,6 +1,4 @@
-<img src="public/assets/sourcemark-lockup.png" alt="SourceMark" height="72" />
-<br />
-<img src="public/assets/sourcemark-icon.png" alt="" height="64" />
+<img src="public/assets/sourcemark-icon.png" alt="SourceMark" height="64" />
 
 # SourceMark — no proof, no answer
 
