@@ -249,7 +249,7 @@ The thing worth pointing at is what *doesn't* change. Both channels run one `com
 
 | Contract | Network | Address |
 | --- | --- | --- |
-| `SourcePayouts` | Hedera testnet (296) | [`0x56cd017467615a51548d5f7972687397d0690148`](https://hashscan.io/testnet/contract/0x56cd017467615a51548d5f7972687397d0690148) |
+| `SourcePayouts` | Hedera testnet (296) | [`0xdd9e55d7b9cd2b1eef59765d34aa445c78497b0f`](https://hashscan.io/testnet/contract/0xdd9e55d7b9cd2b1eef59765d34aa445c78497b0f) |
 
 All six pinned deployments are registered as sources. Check live state with
 `npm run payouts:status`, which reads the contract directly and verifies that
@@ -359,8 +359,8 @@ Stated up front, because the mechanism is easy to overstate:
 
 1. **Payout addresses are still stand-ins.** Consent is real — `POST /v1/consent` verifies an EIP-191 signature from the registered payout key, overlays `consent: consented` on the live registry, and `npm run consent:demo` proves the path with the public Hardhat mnemonic. What it does *not* claim is that Messari or Aave have joined. The addresses remain derived from `test test … junk` until a real team registers their own.
 2. **Holdback percentages are unpriced.** We demonstrate that the mechanism executes correctly. We do not claim the numbers are correctly calibrated against real risk. The dispute bond (`DISPUTE_BOND_TINYBAR`, default 1 HBAR) is likewise a demo default, not a market-priced griefing cost.
-3. **Dispute resolution is arbiter-gated.** Anyone can *open* a dispute permissionlessly and every one is a public event, but a named arbiter decides it. Trustless resolution would need onchain re-derivation of a subgraph query.
-4. **The arbiter is separated from the operator on this deployment.** `ARBITER_ADDRESS` is a distinct key, rotated onchain with `npm run payouts:set-arbiter` ([tx](https://hashscan.io/testnet/transaction/0xab09a3e6557affbfac67874f9baa6455e43ea9bf87f780cca5e85b8e4458db83)). `/health` and `payouts:status` flag any reversion to the same-key setup. Separation is operational, not trustless — the arbiter is still a person with a key.
+3. **Dispute resolution is time-bounded, not fully trustless.** Anyone can *open* a dispute permissionlessly. A named arbiter may uphold or reject early. If the arbiter is silent past `disputeResolveSeconds`, anyone may call `resolveAfterDeadline`, which upholds and refunds the buyer. That is a timed default against silence — not onchain re-derivation of a subgraph query.
+4. **The arbiter is separated from the operator on this deployment.** `ARBITER_ADDRESS` is a distinct key, rotated onchain with `npm run payouts:set-arbiter`. `/health` and `payouts:status` flag any reversion to the same-key setup. Separation is operational; the deadline path is what prevents permanent freeze if that key goes dark.
 5. **The liability window can be griefed.** An open dispute freezes the named sources' holdback so it cannot be waited out. The bond is the only thing making a frivolous freeze expensive.
 6. **Liability expires.** Once a holdback vests it is gone; a dispute raised after `vestingSeconds` recovers nothing. Fraud discovered late is not recoverable.
 7. **A successful read proves provenance, not truth.** On an `identical` family, agreement between independent deployments is real evidence — but both could be indexing the same faulty logic, and agreement would not catch that. On a `peer` family the headline is a market summary, not a verified value; `range` and the per-source table are the honest output.

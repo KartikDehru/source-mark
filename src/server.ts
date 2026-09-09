@@ -20,7 +20,7 @@ import {
 } from './split.js';
 import { reproduceReceipt } from './reproduce.js';
 import { digestOf } from './receipt.js';
-import { operatorEvmAddress, recordReadOnchain, checkOnchainSplit, executeOnchainDispute, ensureReceiptOnchain } from './split-onchain.js';
+import { operatorEvmAddress, recordReadOnchain, checkOnchainSplit, executeOnchainDispute, ensureReceiptOnchain, resolveOnchainAfterDeadline } from './split-onchain.js';
 import { consentMessage, listConsents, recordConsent } from './consent.js';
 import { recordResaleFloat, resaleFloatSummary } from './resale-float.js';
 import { openApiDocument } from './openapi.js';
@@ -111,6 +111,7 @@ app.get('/health', async (c) => {
         ? `https://hashscan.io/testnet/contract/${config.split.contractAddress}`
         : null,
       arbiterAddress: config.split.arbiterAddress || null,
+      disputeResolveSeconds: config.split.disputeResolveSeconds,
       routingFeeBps: config.split.routingFeeBps,
       holdbackBps: config.split.holdbackBps,
       holdbackVestingSeconds: config.split.holdbackVestingSeconds,
@@ -598,6 +599,8 @@ app.post('/v1/disputes', async (c) => {
     reason?: string;
     /** Skip re-derive and slash (demo/arbiter only). Requires ARBITER_PRIVATE_KEY match via header. */
     forceUphold?: boolean;
+    /** Open onchain but leave ruling to resolveAfterDeadline (demo silence path). */
+    preferDeadline?: boolean;
   };
   if (!body.digest || !body.reason) {
     return c.json({ error: 'BAD_REQUEST', detail: 'digest and reason are required' }, 400);
@@ -629,6 +632,7 @@ app.post('/v1/disputes', async (c) => {
         digest: receipt.digest,
         reason: body.reason,
         upheld: true,
+        preferDeadline: Boolean(body.preferDeadline),
       });
       const entry = upholdDispute(receipt.digest, claimant, body.reason, chargedTo, {
         ...reproduceMeta,
@@ -642,7 +646,9 @@ app.post('/v1/disputes', async (c) => {
           'Re-derive failed: answerHash does not match live Graph data at the recorded blocks. ' +
           'Ledger holdback slashed' +
           (onchain?.ok
-            ? '; onchain openDispute + resolveDispute(upheld) confirmed on HashScan.'
+            ? onchain.resolveMode === 'open-only'
+              ? `; onchain openDispute filed — after deadline anyone may resolveAfterDeadline (${onchain.deadlineAt ? new Date(onchain.deadlineAt * 1000).toISOString() : 'see contract'}).`
+              : '; onchain openDispute + arbiter resolveDispute(upheld) confirmed on HashScan (deadline backstop unused).'
             : onchain
               ? `; onchain leg skipped: ${onchain.detail}`
               : '.'),
@@ -671,15 +677,39 @@ app.post('/v1/disputes', async (c) => {
   }
 
   // Arbiter override — only for edge cases the reproduce path cannot decide.
+  const onchain = await executeOnchainDispute({
+    digest: receipt.digest,
+    reason: body.reason,
+    upheld: true,
+    preferDeadline: Boolean(body.preferDeadline),
+  });
   const entry = upholdDispute(receipt.digest, claimant, body.reason, chargedTo, {
     decision: 'arbiter',
+    onchain: onchain ?? null,
   });
   return c.json({
     dispute: entry,
+    onchain,
     note:
       'Arbiter override: refunded from unvested holdback without a successful re-derive. ' +
       'Prefer the default reproduce path.',
   });
+});
+
+/**
+ * Permissionless onchain uphold after disputeResolveSeconds of arbiter silence.
+ */
+app.post('/v1/disputes/resolve-deadline', async (c) => {
+  const body = (await c.req.json().catch(() => ({}))) as { digest?: string };
+  if (!body.digest) return c.json({ error: 'BAD_REQUEST', detail: 'digest is required' }, 400);
+  const onchain = await resolveOnchainAfterDeadline(body.digest);
+  if (!onchain) {
+    return c.json(
+      { error: 'ONCHAIN_DISABLED', detail: 'SPLIT_MODE=onchain and SOURCE_PAYOUTS_ADDRESS required' },
+      503,
+    );
+  }
+  return c.json({ onchain }, onchain.ok ? 200 : 409);
 });
 
 /**
@@ -933,6 +963,41 @@ app.post('/demo/run', async (c) => {
 
   const { payAndRead } = await import('./buyer.js');
   return c.json({ url: url.toString(), ...(await payAndRead(url.toString())) });
+});
+
+/**
+ * One acting-agent tick: pay → threshold decide → optional confirm pay → signed intent.
+ */
+app.post('/demo/run-act', async (c) => {
+  const limited = demoThrottled(c);
+  if (limited) return limited;
+
+  const body = (await c.req.json().catch(() => ({}))) as {
+    family?: string;
+    metric?: string;
+    asset?: string;
+    threshold?: number;
+    confirm?: boolean;
+  };
+
+  const { runActTick } = await import('./agent-act.js');
+  const result = await runActTick({
+    base: publicUrl(c).origin,
+    family: body.family ?? 'aave-v3-ethereum',
+    metric: body.metric ?? 'supplyAPY',
+    asset: body.asset ?? 'USDC',
+    threshold: typeof body.threshold === 'number' ? body.threshold : 3.5,
+    confirm: body.confirm !== false,
+  });
+  return c.json(result);
+});
+
+app.get('/v1/agent-intents', async (c) => {
+  const { listActionIntents } = await import('./agent-act.js');
+  return c.json({
+    intents: listActionIntents(50),
+    note: 'Signed ENTER/HOLD decisions from the acting buyer. REFUSED reads never produce an intent that acts.',
+  });
 });
 
 /**

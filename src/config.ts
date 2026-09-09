@@ -121,6 +121,8 @@ export const config = {
     /** Signs resolveDispute after a reproduce MISMATCH. Must control arbiterAddress. */
     arbiterKey: str('ARBITER_PRIVATE_KEY'),
     disputeBondTinybar: str('DISPUTE_BOND_TINYBAR', '100000000'),
+    /** Onchain silence window before anyone may resolveAfterDeadline. Deploy-time immutable. */
+    disputeResolveSeconds: int('DISPUTE_RESOLVE_SECONDS', 120),
     jsonRpc: str('HEDERA_JSON_RPC', 'https://testnet.hashio.io/api'),
   },
 
@@ -163,7 +165,7 @@ export function configWarnings(): string[] {
   }
   if (config.split.mode === 'onchain' && config.split.arbiterAddress && !config.split.arbiterKey) {
     w.push(
-      'ARBITER_PRIVATE_KEY is unset: reproduce MISMATCH can slash the ledger but cannot resolveDispute onchain.',
+      'ARBITER_PRIVATE_KEY is unset: MATCH→reject and fast MISMATCH resolve need the arbiter; MISMATCH can still open and later resolveAfterDeadline.',
     );
   }
   if (config.split.mode === 'onchain' && config.split.recorderKey && config.split.arbiterAddress) {

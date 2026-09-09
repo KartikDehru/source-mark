@@ -561,6 +561,16 @@
               <a href="https://bazantic.com/dashboard/recipes/sourcemark-proven-lending-rate-with-hedera-settl" target="_blank" rel="noopener">Open the published recipe →</a></p>
             <button class="mint" id="bresale">Read through the resale channel</button>
           </div>
+          <div class="act">
+            <div class="top"><span class="no">05</span><span class="role">agent · act</span></div>
+            <h4>Act on a proven rate</h4>
+            <p>Pay for supply APY, decide ENTER/HOLD against a threshold, then pay again with a tighter lag to confirm before signing an action intent. REFUSED → no charge, no action.</p>
+            <label class="field" style="display:block;margin:8px 0 10px">
+              <span style="font-size:11px;letter-spacing:.04em;text-transform:uppercase;opacity:.7">Threshold %</span>
+              <input type="number" id="threshold" value="3.5" step="0.1" min="0" style="width:100%;margin-top:4px" />
+            </label>
+            <button id="bact">Run acting agent</button>
+          </div>
         </div>
 
         <div class="result">
@@ -568,7 +578,7 @@
             <p class="lbl">// result</p>
             <div class="sp" id="rsp"></div>
           </div>
-          <div id="result"><div class="placeholder">Pick a family above, then run any of the four.</div></div>
+          <div id="result"><div class="placeholder">Pick a family above, then run any of the five.</div></div>
         </div>
       </div>
     </div>
@@ -589,6 +599,7 @@
         <button class="tab" data-tab="policy">Policy</button>
         <button class="tab" data-tab="payouts">Payouts</button>
         <button class="tab" data-tab="disputes">Disputes</button>
+        <button class="tab" data-tab="intents">Agent intents</button>
         <button class="tab" data-tab="health">Service</button>
       </div>
       <div class="tabbody" id="tabbody"><div class="placeholder">loading…</div></div>
@@ -639,7 +650,7 @@
       <p class="lede">The refusal rule would be worth very little coming from a project that oversells everything else.</p>
       <ul class="limits">
         <li><b>Consent is real; payees are demo source operators</b><span>Every registry source has EIP-191 consent via <code>POST /v1/consent</code>. Keys come from a dedicated <code>DEMO_SOURCE_MNEMONIC</code> (not the gateway operator, not the public Hardhat phrase). Real indexer teams have not registered production keys.</span></li>
-        <li><b>Disputes re-derive against The Graph, then settle onchain</b><span><code>POST /v1/disputes</code> re-queries each pinned deployment at the receipt’s blocks. Match → rejected (no slash). Mismatch → ledger slash <em>and</em> <code>openDispute</code> + arbiter <code>resolveDispute(true)</code> on <code>SourcePayouts</code> when the digest was <code>recordRead</code>. Ambiguous → no slash.</span></li>
+        <li><b>Disputes re-derive against The Graph, then settle onchain</b><span><code>POST /v1/disputes</code> re-queries each pinned deployment at the receipt’s blocks. Match → rejected (no slash). Mismatch → ledger slash <em>and</em> <code>openDispute</code>; the arbiter may resolve early, or after <code>disputeResolveSeconds</code> of silence anyone may call <code>resolveAfterDeadline</code> (permissionless uphold). That is a timed default against silence — not onchain Graph re-derivation.</span></li>
         <li><b>Testnet only</b><span>Hedera testnet HBAR, a testnet facilitator, and a testnet <code>SourcePayouts</code> deployment.</span></li>
         <li><b>Resale reads are operator-funded</b><span>Bazantic collects upstream in another currency; sources are still paid in HBAR out of our float. The float is now an auditable ledger on <code>/health</code>.</span></li>
         <li><b>Refusal cannot be bought around</b><span>A caller may tighten a freshness bound. Nothing a caller sends can loosen one past the family policy.</span></li>
@@ -658,6 +669,8 @@
       <div><code>GET /v1/receipts/:digest</code><span>The signed evidence behind an answer, with digest + EIP-191 signature checks and how to re-derive it.</span></div>
       <div><code>GET /v1/payouts</code><span>Per source: earned, cleared, still slashable, already slashed.</span></div>
       <div><code>POST /v1/disputes</code><span>Refund a disproved read out of unvested holdback.</span></div>
+      <div><code>POST /v1/disputes/resolve-deadline</code><span>Permissionless onchain uphold after arbiter silence.</span></div>
+      <div><code>GET /v1/agent-intents</code><span>Signed ENTER/HOLD decisions from the acting buyer.</span></div>
       <div><code>POST /v1/consent</code><span>Opt a source in by EIP-191-signing with its payout address.</span></div>
       <div><code>GET /openapi.json</code><span>The machine-readable contract this service is listed from.</span></div>
     </div>
@@ -677,7 +690,7 @@
 
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
-const ACTIONS = ['b402', 'bpay', 'bstale', 'bresale'];
+const ACTIONS = ['b402', 'bpay', 'bstale', 'bresale', 'bact'];
 
 let HEALTH = null;
 let REGISTRY = null;
@@ -1140,6 +1153,55 @@ async function runAgent(strictAge) {
 $('bpay').onclick = () => runAgent(undefined);
 $('bstale').onclick = () => runAgent(1);
 
+$('bact').onclick = async () => {
+  const threshold = Number.parseFloat(($('threshold') && $('threshold').value) || '3.5');
+  busy(true, 'acting agent: pay → decide → confirm → sign intent…');
+  try {
+    const q = query();
+    q.threshold = Number.isFinite(threshold) ? threshold : 3.5;
+    q.confirm = true;
+    const r = await api('/demo/run-act', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(q),
+    });
+    const run = r.body || {};
+    if (r.status !== 200) {
+      $('rsp').innerHTML = statusPill(r.status);
+      $('result').innerHTML = harnessError(r.status, run);
+      busy(false);
+      return;
+    }
+    const intent = run.intent || {};
+    const body = intent.body || {};
+    const decision = body.decision || 'NONE';
+    const banner =
+      decision === 'ENTER' ? 'good' : decision === 'HOLD' ? 'hold' : 'info';
+    $('rsp').innerHTML = statusPill(run.read && run.read.status);
+    let html = traceList((run.read && run.read.trace) || []);
+    if (run.read && run.read.status === 409) html += refusalBox(run.read.body || {});
+    else if (run.read && run.read.body && run.read.body.answer) html += answerView(run.read.body);
+    html +=
+      '<div class="banner ' + banner + '"><strong>Action intent · ' + esc(decision) + '</strong>' +
+      '<span class="s">' + esc(body.note || '') + '</span>' +
+      '<span class="s">threshold <code>' + esc(body.threshold) + '</code>' +
+      (body.answerValue != null ? ' · answer <code>' + num(body.answerValue) + '</code>' : '') +
+      (body.confirmValue != null ? ' · confirm <code>' + num(body.confirmValue) + '</code>' : '') +
+      (body.confirmed ? ' · confirmed' : '') + '</span>' +
+      '<span class="s">intent digest <code>' + esc(short(intent.digest, 14, 8)) + '</code>' +
+      (intent.signer ? ' · signer <code>' + esc(short(intent.signer, 10, 6)) + '</code>' : ' · unsigned') +
+      '</span></div>';
+    if (run.confirm && run.confirm.status === 409) {
+      html += '<div class="banner hold"><strong>Confirm read refused</strong><span class="s">Second look failed the policy — no ENTER.</span></div>';
+    }
+    $('result').innerHTML = html + raw({ intent, read: run.read && run.read.body, confirm: run.confirm && run.confirm.body }, 'acting agent');
+    if (currentTab === 'intents') loadTab('intents');
+  } catch (e) {
+    $('result').innerHTML = '<div class="banner err">' + esc(e.message) + '</div>';
+  }
+  busy(false);
+};
+
 $('bresale').onclick = async () => {
   busy(true, 'calling the gate the way the Bazantic gateway does…');
   try {
@@ -1226,14 +1288,15 @@ window.verifyReceipt = async function (digest) {
     (r.body.howToVerify || []).map((s) => '<span class="s">· ' + esc(s) + '</span>').join('') + '</div>' +
     '<div class="btnrow">' +
       '<button class="ghost sm" onclick="disputeReceipt(\'' + esc(digest) + '\')">Challenge · re-derive vs Graph</button>' +
-      '<button class="ghost sm" onclick="disputeFalsified(\'' + esc(digest) + '\')">Demo slash · falsified twin</button>' +
+      '<button class="ghost sm" onclick="disputeFalsified(\'' + esc(digest) + '\')">Demo slash · arbiter</button>' +
+      '<button class="ghost sm" onclick="disputeFalsifiedDeadline(\'' + esc(digest) + '\')">Demo slash · open + wait for deadline</button>' +
     '</div>' +
     raw(r.body, 'full signed receipt + verification') + '</div>');
   const panel = $('verify-panel');
   if (panel) panel.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
 };
 
-window.disputeReceipt = async function (digest) {
+window.disputeReceipt = async function (digest, preferDeadline) {
   const target = digest || LAST_RECEIPT_DIGEST;
   if (!target) {
     $('result').insertAdjacentHTML('beforeend',
@@ -1247,7 +1310,10 @@ window.disputeReceipt = async function (digest) {
     body: JSON.stringify({
       digest: target,
       claimant: 'demo-page',
-      reason: 'demo: re-derive this receipt against live Graph data at the recorded blocks',
+      reason: preferDeadline
+        ? 'demo: open onchain and leave ruling to resolveAfterDeadline after silence'
+        : 'demo: re-derive this receipt against live Graph data at the recorded blocks',
+      preferDeadline: Boolean(preferDeadline),
     }),
   });
   if (!r.ok) {
@@ -1257,6 +1323,7 @@ window.disputeReceipt = async function (digest) {
   }
   const d = r.body.dispute;
   const repro = r.body.reproduction;
+  const onchain = r.body.onchain || (d && d.onchain);
   const status = d.status;
   const banner =
     status === 'UPHELD' ? 'err' : status === 'REJECTED' ? 'good' : 'hold';
@@ -1266,6 +1333,15 @@ window.disputeReceipt = async function (digest) {
       : status === 'REJECTED'
         ? '✓ Receipt reproduced — dispute rejected, no slash'
         : 'Ambiguous — could not fully re-derive, no slash';
+
+  let deadlineBtn = '';
+  if (onchain && onchain.resolveMode === 'open-only' && onchain.deadlineAt) {
+    deadlineBtn =
+      '<div class="btnrow"><button class="ghost sm" onclick="resolveDeadline(\'' +
+      esc(target) +
+      '\')">Resolve after deadline · resolveAfterDeadline</button>' +
+      '<span class="s">opens ' + esc(new Date(onchain.deadlineAt * 1000).toISOString()) + '</span></div>';
+  }
 
   $('result').insertAdjacentHTML('beforeend',
     '<div class="block" id="dispute-panel"><div class="blockhead">Dispute · re-derive <span>· POST /v1/disputes</span></div>' +
@@ -1279,23 +1355,24 @@ window.disputeReceipt = async function (digest) {
           ? ' · recomputed <code>' + esc(short(repro.recomputedAnswerHash, 14, 8)) + '</code>'
           : '') + '</span>'
       : '') +
-    (d.onchain
-      ? '<span class="s">Onchain: ' + esc(d.onchain.detail) +
-        (d.onchain.openExplorer
-          ? ' — <a href="' + esc(d.onchain.openExplorer) + '" target="_blank" rel="noopener">openDispute</a>'
+    (onchain
+      ? '<span class="s">Onchain: ' + esc(onchain.detail) +
+        (onchain.openExplorer
+          ? ' — <a href="' + esc(onchain.openExplorer) + '" target="_blank" rel="noopener">openDispute</a>'
           : '') +
-        (d.onchain.resolveExplorer
-          ? ' · <a href="' + esc(d.onchain.resolveExplorer) + '" target="_blank" rel="noopener">resolveDispute</a>'
+        (onchain.resolveExplorer
+          ? ' · <a href="' + esc(onchain.resolveExplorer) + '" target="_blank" rel="noopener">resolve</a>'
           : '') + '</span>'
       : '') +
     '<span class="s">' + esc(r.body.note || '') + '</span></div>' +
+    deadlineBtn +
     raw(r.body, 'raw dispute + reproduction') + '</div>');
   const panel = $('dispute-panel');
   if (panel) panel.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
   if (currentTab === 'payouts' || currentTab === 'disputes') loadTab(currentTab);
 };
 
-window.disputeFalsified = async function (digest) {
+window.disputeFalsified = async function (digest, preferDeadline) {
   const target = digest || LAST_RECEIPT_DIGEST;
   if (!target) {
     $('result').insertAdjacentHTML('beforeend',
@@ -1315,8 +1392,33 @@ window.disputeFalsified = async function (digest) {
   $('result').insertAdjacentHTML('beforeend',
     '<div class="banner hold"><strong>Falsified twin stored</strong>' +
     '<span class="s">Corrupted answerHash on purpose. Challenging <code>' +
-    esc(short(fake.body.falsifiedDigest, 14, 8)) + '</code>…</span></div>');
-  await window.disputeReceipt(fake.body.falsifiedDigest);
+    esc(short(fake.body.falsifiedDigest, 14, 8)) + '</code>' +
+    (preferDeadline ? ' (open only — resolveAfterDeadline after silence)…' : '…') +
+    '</span></div>');
+  await window.disputeReceipt(fake.body.falsifiedDigest, preferDeadline);
+};
+
+window.disputeFalsifiedDeadline = function (digest) {
+  return window.disputeFalsified(digest, true);
+};
+
+window.resolveDeadline = async function (digest) {
+  const target = digest || LAST_RECEIPT_DIGEST;
+  if (!target) return;
+  const r = await api('/v1/disputes/resolve-deadline', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ digest: target }),
+  });
+  const onchain = r.body && r.body.onchain;
+  $('result').insertAdjacentHTML('beforeend',
+    '<div class="block"><div class="blockhead">resolveAfterDeadline <span>· POST /v1/disputes/resolve-deadline</span></div>' +
+    '<div class="banner ' + (r.ok ? 'good' : 'hold') + '"><strong>' +
+      esc((onchain && onchain.detail) || ('HTTP ' + r.status)) + '</strong>' +
+    (onchain && onchain.resolveExplorer
+      ? '<span class="s"><a href="' + esc(onchain.resolveExplorer) + '" target="_blank" rel="noopener">HashScan</a></span>'
+      : '') +
+    '</div>' + raw(r.body, 'deadline resolve') + '</div>');
 };
 
 /* ── explorer tabs ──────────────────────────────────────────────────────── */
@@ -1445,6 +1547,29 @@ const TABS = {
       '</tr></thead><tbody>' + rows + '</tbody></table></div>' + raw(r.body, 'GET /v1/disputes');
   },
 
+  async intents() {
+    const r = await api('/v1/agent-intents');
+    const list = (r.body && r.body.intents) || [];
+    if (!list.length) {
+      return '<div class="banner info"><strong>No action intents yet</strong>' +
+        '<span class="s">Run <strong>05 · Act on a proven rate</strong>. ENTER requires a paid read that clears the threshold and a confirm read; REFUSED never acts.</span></div>';
+    }
+    const rows = list.map((i) => {
+      const b = i.body || {};
+      return '<tr><td class="faint">' + (b.at ? new Date(b.at * 1000).toISOString().replace('T', ' ').slice(0, 19) : '—') + '</td>' +
+        '<td class="' + (b.decision === 'ENTER' ? 'st-ok' : b.decision === 'HOLD' ? 'dim' : 'st-no') + '">' + esc(b.decision) + '</td>' +
+        '<td class="num">' + (b.answerValue != null ? num(b.answerValue) : '—') + '</td>' +
+        '<td class="num">' + esc(b.threshold) + '</td>' +
+        '<td>' + (b.confirmed ? 'yes' : 'no') + '</td>' +
+        '<td class="faint" title="' + esc(i.digest) + '">' + esc(short(i.digest, 10, 6)) + '</td>' +
+        '<td class="wrap">' + esc(b.note) + '</td></tr>';
+    }).join('');
+    return '<div class="banner info">' + esc(r.body.note || '') + '</div>' +
+      '<div class="tbl"><table><thead><tr><th>at</th><th>decision</th><th class="num">answer</th><th class="num">threshold</th>' +
+      '<th>confirmed</th><th>intent</th><th>note</th></tr></thead><tbody>' + rows + '</tbody></table></div>' +
+      raw(r.body, 'GET /v1/agent-intents');
+  },
+
   async health() {
     const r = await api('/health');
     const h = r.body;
@@ -1473,6 +1598,9 @@ const TABS = {
           '<span class="s">Routing fee ' + (h.split.routingFeeBps / 100) + '%, holdback ' +
           (h.split.holdbackBps / 100) + '% unvested for ' + duration(h.split.holdbackVestingSeconds) + '.' +
           (h.split.arbiterAddress ? ' Arbiter <code>' + esc(h.split.arbiterAddress) + '</code>.' : '') +
+          (h.split.disputeResolveSeconds
+            ? ' Silence window <code>' + esc(h.split.disputeResolveSeconds) + 's</code> then anyone may resolveAfterDeadline.'
+            : '') +
           '</span></div>'
         : '') +
       (h.hcs && h.hcs.enabled && h.hcs.topicId

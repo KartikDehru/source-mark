@@ -28,6 +28,7 @@ const ROUTING_FEE_BPS = 1000n; // 10%
 const HOLDBACK_BPS = 2000n; // 20% of a source's cut
 const VESTING = 604800n; // 7 days
 const BOND = parseEther('0.1');
+const RESOLVE_WINDOW = 3600n; // 1 hour silence → permissionless uphold
 
 const SRC_A = keccak256(toBytes('QmDeploymentAaveV3One'));
 const SRC_B = keccak256(toBytes('QmDeploymentAaveV3Two'));
@@ -51,6 +52,7 @@ async function deploy() {
     Number(HOLDBACK_BPS),
     VESTING,
     BOND,
+    RESOLVE_WINDOW,
   ]);
 
   await contract.write.registerSource([SRC_A, payeeA.account.address]);
@@ -439,9 +441,46 @@ describe('SourcePayouts', () => {
       await assert.rejects(asArbiter.write.resolveDispute([DIGEST, false]), /DisputeAlreadyResolved/);
     });
 
-    it('can only be resolved by the arbiter, not the operator', async () => {
+    it('can only be resolved by the arbiter before the deadline, not the operator', async () => {
       await d.contract.write.openDispute([DIGEST, 'x'], { value: BOND });
       await assert.rejects(d.contract.write.resolveDispute([DIGEST, true]), /NotArbiter/);
+    });
+
+    it('rejects resolveAfterDeadline before the window and upholds after silence', async () => {
+      const heldA = await d.contract.read.unvestedHoldback([SRC_A]);
+      const heldB = await d.contract.read.unvestedHoldback([SRC_B]);
+
+      const asStranger = await viem.getContractAt('SourcePayouts', d.contract.address, {
+        client: { wallet: d.stranger },
+      });
+      await asStranger.write.openDispute([DIGEST, 'silence'], { value: BOND });
+
+      await assert.rejects(d.contract.write.resolveAfterDeadline([DIGEST]), /DisputeTooEarly/);
+
+      await networkHelpers.time.increase(Number(RESOLVE_WINDOW) + 1);
+
+      const buyerBefore = await balanceOf(d, d.buyer.account.address);
+      const claimantBefore = await balanceOf(d, d.stranger.account.address);
+
+      // Anyone — including the operator — can call after the deadline.
+      await d.contract.write.resolveAfterDeadline([DIGEST]);
+
+      assert.equal(await balanceOf(d, d.buyer.account.address), buyerBefore + heldA + heldB);
+      assert.equal(await balanceOf(d, d.stranger.account.address), claimantBefore + BOND);
+      const dispute = await d.contract.read.disputeOf([DIGEST]);
+      assert.equal(dispute.resolved, true);
+      assert.equal(dispute.upheld, true);
+    });
+
+    it('lets the arbiter reject spam before the deadline so silence never auto-upholds', async () => {
+      await d.contract.write.openDispute([DIGEST, 'spam'], { value: BOND });
+      const asArbiter = await viem.getContractAt('SourcePayouts', d.contract.address, {
+        client: { wallet: d.arbiter },
+      });
+      await asArbiter.write.resolveDispute([DIGEST, false]);
+
+      await networkHelpers.time.increase(Number(RESOLVE_WINDOW) + 1);
+      await assert.rejects(d.contract.write.resolveAfterDeadline([DIGEST]), /DisputeAlreadyResolved/);
     });
 
     it('stays solvent through a full dispute cycle', async () => {
@@ -457,9 +496,16 @@ describe('SourcePayouts', () => {
   });
 
   describe('configuration', () => {
-    it('rejects a fee plus holdback over 100% and a zero arbiter', async () => {
+    it('rejects a fee plus holdback over 100%, a zero arbiter, and a zero resolve window', async () => {
       await assert.rejects(
-        viem.deployContract('SourcePayouts', [d.arbiter.account.address, 6000, 5000, VESTING, BOND]),
+        viem.deployContract('SourcePayouts', [
+          d.arbiter.account.address,
+          6000,
+          5000,
+          VESTING,
+          BOND,
+          RESOLVE_WINDOW,
+        ]),
         /BadParams/,
       );
       await assert.rejects(
@@ -469,6 +515,18 @@ describe('SourcePayouts', () => {
           2000,
           VESTING,
           BOND,
+          RESOLVE_WINDOW,
+        ]),
+        /BadParams/,
+      );
+      await assert.rejects(
+        viem.deployContract('SourcePayouts', [
+          d.arbiter.account.address,
+          1000,
+          2000,
+          VESTING,
+          BOND,
+          0n,
         ]),
         /BadParams/,
       );

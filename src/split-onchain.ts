@@ -74,6 +74,31 @@ const RECORD_READ_ABI = [
   },
   {
     type: 'function',
+    name: 'disputeResolveSeconds',
+    stateMutability: 'view',
+    inputs: [],
+    outputs: [{ name: '', type: 'uint64' }],
+  },
+  {
+    type: 'function',
+    name: 'disputeOf',
+    stateMutability: 'view',
+    inputs: [{ name: 'receiptDigest', type: 'bytes32' }],
+    outputs: [
+      {
+        type: 'tuple',
+        components: [
+          { name: 'claimant', type: 'address' },
+          { name: 'bond', type: 'uint128' },
+          { name: 'openedAt', type: 'uint64' },
+          { name: 'resolved', type: 'bool' },
+          { name: 'upheld', type: 'bool' },
+        ],
+      },
+    ],
+  },
+  {
+    type: 'function',
     name: 'receiptOf',
     stateMutability: 'view',
     inputs: [{ name: 'receiptDigest', type: 'bytes32' }],
@@ -108,6 +133,13 @@ const RECORD_READ_ABI = [
       { name: 'receiptDigest', type: 'bytes32' },
       { name: 'upheld', type: 'bool' },
     ],
+    outputs: [],
+  },
+  {
+    type: 'function',
+    name: 'resolveAfterDeadline',
+    stateMutability: 'nonpayable',
+    inputs: [{ name: 'receiptDigest', type: 'bytes32' }],
     outputs: [],
   },
 ] as const;
@@ -303,6 +335,9 @@ export interface OnchainDisputeResult {
   openExplorer?: string;
   resolveExplorer?: string;
   upheld: boolean;
+  /** Unix seconds when resolveAfterDeadline becomes callable (if still open). */
+  deadlineAt?: number;
+  resolveMode?: 'arbiter' | 'deadline' | 'open-only';
 }
 
 function arbiterWallet() {
@@ -316,24 +351,24 @@ function arbiterWallet() {
 
 /**
  * After a Graph re-derive MISMATCH (or MATCH→reject), drive the onchain dispute
- * path: anyone opens with the dispute bond, the arbiter resolves from evidence.
+ * path: anyone opens with the dispute bond; the arbiter may resolve early from
+ * evidence. If the arbiter is silent past disputeResolveSeconds, anyone may
+ * call resolveAfterDeadline (permissionless uphold).
  *
  * Non-fatal: ledger dispute already recorded; missing keys or an unrecorded
  * digest just skips the chain leg and reports why.
+ *
+ * Pass `preferDeadline: true` to open without an arbiter resolve — useful for
+ * demonstrating the silence→uphold path (default resolve window is short on
+ * testnet).
  */
 export async function executeOnchainDispute(args: {
   digest: string;
   reason: string;
   upheld: boolean;
+  preferDeadline?: boolean;
 }): Promise<OnchainDisputeResult | null> {
   if (!onchainSplitEnabled()) return null;
-  if (!config.split.arbiterKey) {
-    return {
-      ok: false,
-      upheld: args.upheld,
-      detail: 'ARBITER_PRIVATE_KEY unset — ledger slash only',
-    };
-  }
 
   const run = async (): Promise<OnchainDisputeResult> => {
     try {
@@ -360,11 +395,18 @@ export async function executeOnchainDispute(args: {
         };
       }
 
-      const bond = await publicClient.readContract({
-        address,
-        abi: RECORD_READ_ABI,
-        functionName: 'disputeBond',
-      });
+      const [bond, resolveSeconds] = await Promise.all([
+        publicClient.readContract({
+          address,
+          abi: RECORD_READ_ABI,
+          functionName: 'disputeBond',
+        }),
+        publicClient.readContract({
+          address,
+          abi: RECORD_READ_ABI,
+          functionName: 'disputeResolveSeconds',
+        }),
+      ]);
 
       const openHash = await wallet.writeContract({
         address,
@@ -386,14 +428,43 @@ export async function executeOnchainDispute(args: {
         };
       }
 
+      const dispute = await publicClient.readContract({
+        address,
+        abi: RECORD_READ_ABI,
+        functionName: 'disputeOf',
+        args: [digest],
+      });
+      const deadlineAt = Number(dispute.openedAt) + Number(resolveSeconds);
+
+      // Silence path: leave open so anyone can resolveAfterDeadline later.
+      // Also used when rejecting MATCH would need arbiter — MATCH path still
+      // needs arbiter to reject (deadline only upholds).
+      if (args.preferDeadline && args.upheld) {
+        return {
+          ok: true,
+          upheld: true,
+          openTx: openHash,
+          openExplorer: `https://hashscan.io/testnet/transaction/${openHash}`,
+          deadlineAt,
+          resolveMode: 'open-only',
+          detail:
+            `Opened onchain; arbiter silent by design. After ${new Date(deadlineAt * 1000).toISOString()} ` +
+            'anyone may call resolveAfterDeadline to uphold and refund the buyer.',
+        };
+      }
+
       const arbiter = arbiterWallet();
       if (!arbiter) {
         return {
-          ok: false,
+          ok: Boolean(args.upheld),
           upheld: args.upheld,
           openTx: openHash,
           openExplorer: `https://hashscan.io/testnet/transaction/${openHash}`,
-          detail: 'Opened onchain but arbiter wallet unavailable for resolveDispute',
+          deadlineAt,
+          resolveMode: 'open-only',
+          detail: args.upheld
+            ? `Opened onchain; no ARBITER_PRIVATE_KEY. After deadline (${deadlineAt}) anyone may resolveAfterDeadline.`
+            : 'Opened onchain but MATCH→reject needs an arbiter before the deadline (silence would wrongly uphold).',
         };
       }
 
@@ -414,6 +485,7 @@ export async function executeOnchainDispute(args: {
           resolveTx: resolveHash,
           openExplorer: `https://hashscan.io/testnet/transaction/${openHash}`,
           resolveExplorer: `https://hashscan.io/testnet/transaction/${resolveHash}`,
+          deadlineAt,
           detail: 'resolveDispute reverted',
         };
       }
@@ -432,8 +504,10 @@ export async function executeOnchainDispute(args: {
         resolveTx: resolveHash,
         openExplorer: `https://hashscan.io/testnet/transaction/${openHash}`,
         resolveExplorer: `https://hashscan.io/testnet/transaction/${resolveHash}`,
+        deadlineAt,
+        resolveMode: 'arbiter',
         detail: args.upheld
-          ? 'Opened + arbiter upheld onchain after Graph re-derive MISMATCH'
+          ? 'Opened + arbiter upheld onchain after Graph re-derive MISMATCH (deadline backstop unused)'
           : 'Opened + arbiter rejected onchain after Graph re-derive MATCH',
       };
     } catch (err) {
@@ -442,6 +516,97 @@ export async function executeOnchainDispute(args: {
         ok: false,
         upheld: args.upheld,
         detail: err instanceof Error ? err.message : String(err),
+      };
+    }
+  };
+
+  const next = queue.then(run, run);
+  queue = next.catch(() => undefined);
+  return next;
+}
+
+/**
+ * Permissionless uphold after disputeResolveSeconds of arbiter silence.
+ */
+export async function resolveOnchainAfterDeadline(digest: string): Promise<OnchainDisputeResult | null> {
+  if (!onchainSplitEnabled()) return null;
+
+  const run = async (): Promise<OnchainDisputeResult> => {
+    try {
+      const { wallet, publicClient, address } = getClients();
+      const dig = digest as `0x${string}`;
+      const [dispute, resolveSeconds] = await Promise.all([
+        publicClient.readContract({
+          address,
+          abi: RECORD_READ_ABI,
+          functionName: 'disputeOf',
+          args: [dig],
+        }),
+        publicClient.readContract({
+          address,
+          abi: RECORD_READ_ABI,
+          functionName: 'disputeResolveSeconds',
+        }),
+      ]);
+      if (!dispute.openedAt) {
+        return { ok: false, upheld: true, detail: 'No open dispute for this digest' };
+      }
+      if (dispute.resolved) {
+        return {
+          ok: false,
+          upheld: dispute.upheld,
+          detail: 'Dispute already resolved',
+          resolveMode: 'deadline',
+        };
+      }
+      const deadlineAt = Number(dispute.openedAt) + Number(resolveSeconds);
+      const now = Math.floor(Date.now() / 1000);
+      if (now < deadlineAt) {
+        return {
+          ok: false,
+          upheld: true,
+          deadlineAt,
+          resolveMode: 'open-only',
+          detail: `Too early: resolveAfterDeadline opens at ${new Date(deadlineAt * 1000).toISOString()} (${deadlineAt - now}s left)`,
+        };
+      }
+
+      const hash = await wallet.writeContract({
+        address,
+        abi: RECORD_READ_ABI,
+        functionName: 'resolveAfterDeadline',
+        args: [dig],
+        chain: hederaTestnet,
+        account: wallet.account!,
+      });
+      const rcpt = await publicClient.waitForTransactionReceipt({ hash });
+      if (rcpt.status !== 'success') {
+        return {
+          ok: false,
+          upheld: true,
+          resolveTx: hash,
+          resolveExplorer: `https://hashscan.io/testnet/transaction/${hash}`,
+          deadlineAt,
+          resolveMode: 'deadline',
+          detail: 'resolveAfterDeadline reverted',
+        };
+      }
+      return {
+        ok: true,
+        upheld: true,
+        resolveTx: hash,
+        resolveExplorer: `https://hashscan.io/testnet/transaction/${hash}`,
+        deadlineAt,
+        resolveMode: 'deadline',
+        detail: 'Permissionless resolveAfterDeadline upheld — buyer refunded from unvested holdback',
+      };
+    } catch (err) {
+      log.error('resolveAfterDeadline failed', { err: String(err), digest });
+      return {
+        ok: false,
+        upheld: true,
+        detail: err instanceof Error ? err.message : String(err),
+        resolveMode: 'deadline',
       };
     }
   };

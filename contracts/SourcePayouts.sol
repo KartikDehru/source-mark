@@ -21,11 +21,11 @@ pragma solidity ^0.8.24;
 ///   - The operator can withdraw the routing fee and nothing else. Source
 ///     balances are not reachable by the operator under any code path.
 ///   - Unclaimed source funds are never sweepable. There is no rescue function.
-///   - Dispute resolution is arbiter-gated, not trustless. Anyone may OPEN a
-///     dispute permissionlessly and every dispute is a public event, but a
-///     named arbiter decides it. Making that decision trustless requires
-///     onchain re-derivation of a subgraph query, which is out of scope here
-///     and should not be claimed.
+///   - Dispute opening is permissionless. A named arbiter may resolve early
+///     (uphold or reject). If the arbiter is silent past `disputeResolveSeconds`,
+///     anyone may call `resolveAfterDeadline`, which upholds and refunds the
+///     buyer. That is not trustless Graph re-derivation — it is a timed
+///     default-against-silence so a freeze cannot last forever.
 ///   - An open dispute freezes vesting for the sources named on the receipt.
 ///     That is what stops a source from outlasting a challenge, and it is also
 ///     a griefing surface: the bond is the only thing making a frivolous
@@ -73,6 +73,8 @@ contract SourcePayouts {
     uint16 public immutable holdbackBps;
     uint64 public immutable vestingSeconds;
     uint128 public immutable disputeBond;
+    /// @dev After this many seconds with no arbiter ruling, anyone may uphold.
+    uint64 public immutable disputeResolveSeconds;
 
     uint256 public operatorBalance;
 
@@ -121,6 +123,7 @@ contract SourcePayouts {
     error NotPayee();
     error TransferFailed();
     error BadParams();
+    error DisputeTooEarly(uint64 opensAt, uint64 nowTs);
 
     // ─── Construction ────────────────────────────────────────────────────────
 
@@ -129,10 +132,12 @@ contract SourcePayouts {
         uint16 routingFeeBps_,
         uint16 holdbackBps_,
         uint64 vestingSeconds_,
-        uint128 disputeBond_
+        uint128 disputeBond_,
+        uint64 disputeResolveSeconds_
     ) {
         if (arbiter_ == address(0)) revert BadParams();
         if (uint256(routingFeeBps_) + uint256(holdbackBps_) > 10_000) revert BadParams();
+        if (disputeResolveSeconds_ == 0) revert BadParams();
 
         operator = msg.sender;
         arbiter = arbiter_;
@@ -141,6 +146,7 @@ contract SourcePayouts {
         holdbackBps = holdbackBps_;
         vestingSeconds = vestingSeconds_;
         disputeBond = disputeBond_;
+        disputeResolveSeconds = disputeResolveSeconds_;
     }
 
     modifier onlyOperator() {
@@ -293,11 +299,27 @@ contract SourcePayouts {
         emit DisputeOpened(receiptDigest, msg.sender, reason);
     }
 
-    /// @notice Resolve a dispute. If upheld, every source on the receipt is
-    /// slashed from its unvested holdback and the buyer is refunded.
+    /// @notice Arbiter resolve. May uphold or reject before the deadline.
     /// @dev Refunds are capped at what is actually unvested. We never promise a
     /// refund the contract cannot fund.
     function resolveDispute(bytes32 receiptDigest, bool upheld) external onlyArbiter {
+        _resolve(receiptDigest, upheld);
+    }
+
+    /// @notice Permissionless uphold after the arbiter window. Silence defaults
+    /// to the challenger's favour so an open dispute cannot freeze forever.
+    function resolveAfterDeadline(bytes32 receiptDigest) external {
+        Dispute storage d = _disputes[receiptDigest];
+        if (d.openedAt == 0) revert UnknownReceipt(receiptDigest);
+        if (d.resolved) revert DisputeAlreadyResolved(receiptDigest);
+
+        uint64 opensAt = d.openedAt + disputeResolveSeconds;
+        if (block.timestamp < opensAt) revert DisputeTooEarly(opensAt, uint64(block.timestamp));
+
+        _resolve(receiptDigest, true);
+    }
+
+    function _resolve(bytes32 receiptDigest, bool upheld) private {
         Dispute storage d = _disputes[receiptDigest];
         if (d.openedAt == 0) revert UnknownReceipt(receiptDigest);
         if (d.resolved) revert DisputeAlreadyResolved(receiptDigest);

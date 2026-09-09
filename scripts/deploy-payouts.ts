@@ -37,6 +37,8 @@ const ROUTING_FEE_BPS = Number(process.env.ROUTING_FEE_BPS ?? 1000);
 const HOLDBACK_BPS = Number(process.env.HOLDBACK_BPS ?? 2000);
 const VESTING = BigInt(process.env.HOLDBACK_VESTING_SECONDS ?? 604800);
 const BOND = BigInt(process.env.DISPUTE_BOND_TINYBAR ?? 100_000_000) * 10_000_000_000n; // tinybar → weibar
+// Short on testnet so the silence→uphold path is demoable; raise for production.
+const RESOLVE_WINDOW = BigInt(process.env.DISPUTE_RESOLVE_SECONDS ?? 120);
 
 function hashscan(kind: 'contract' | 'transaction', ref: string): string {
   return `https://hashscan.io/testnet/${kind}/${ref}`;
@@ -65,7 +67,7 @@ async function main(): Promise<void> {
   }
 
   console.log(
-    `${DIM}fee ${ROUTING_FEE_BPS}bps · holdback ${HOLDBACK_BPS}bps · vesting ${VESTING}s · bond ${formatEther(BOND)} HBAR${RESET}\n`,
+    `${DIM}fee ${ROUTING_FEE_BPS}bps · holdback ${HOLDBACK_BPS}bps · vesting ${VESTING}s · bond ${formatEther(BOND)} HBAR · resolve window ${RESOLVE_WINDOW}s${RESET}\n`,
   );
 
   const contract = await viem.deployContract('SourcePayouts', [
@@ -74,6 +76,7 @@ async function main(): Promise<void> {
     HOLDBACK_BPS,
     VESTING,
     BOND,
+    RESOLVE_WINDOW,
   ]);
 
   console.log(`${GREEN}${BOLD}deployed${RESET} ${contract.address}`);
