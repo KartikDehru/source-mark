@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>SourceMark — no proof, no answer</title>
 <meta name="description" content="Paid, provenance-checked reads of standardized onchain data. x402 on Hedera, sources pinned on The Graph, revenue split onchain with slashable holdback. A refusal is free." />
-<link rel="icon" type="image/svg+xml" href="/assets/sourcemark-icon-light.svg?v=2" />
+<link rel="icon" type="image/svg+xml" href="/assets/sourcemark-icon-light.svg?v=3" />
 <link rel="preconnect" href="https://fonts.googleapis.com" />
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
 <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400..800&family=Spline+Sans+Mono:wght@300..700&display=swap" rel="stylesheet" />
@@ -351,7 +351,7 @@
 <nav>
   <div class="inner">
     <a class="mark" href="#top">
-      <img src="/assets/sourcemark-icon-light.svg?v=2" alt="" />
+      <img src="/assets/sourcemark-icon-light.svg?v=3" alt="" />
       <span class="wm">source<i>mark</i></span>
     </a>
     <div class="links">
@@ -389,7 +389,7 @@
     </svg>
 
     <div class="wrap">
-      <img class="lockup" src="/assets/sourcemark-lockup-light.svg?v=2" alt="SourceMark" />
+      <img class="lockup" src="/assets/sourcemark-lockup-light.svg?v=3" alt="SourceMark" />
 
       <h1>No proof,<br /><span class="hl">no answer.</span><span class="caret"></span></h1>
 
@@ -622,7 +622,7 @@
       <p class="lede">The refusal rule would be worth very little coming from a project that oversells everything else.</p>
       <ul class="limits">
         <li><b>Consent is real; payees are demo source operators</b><span>Every registry source has EIP-191 consent via <code>POST /v1/consent</code>. Keys come from a dedicated <code>DEMO_SOURCE_MNEMONIC</code> (not the gateway operator, not the public Hardhat phrase). Real indexer teams have not registered production keys.</span></li>
-        <li><b>Disputes re-derive against The Graph</b><span><code>POST /v1/disputes</code> re-queries each pinned deployment at the receipt’s blocks and compares <code>answerHash</code>. Match → rejected (no slash). Mismatch → upheld and holdback slashed. Ambiguous (pruned history) → no slash. Onchain bonded disputes remain arbiter-gated for edge cases.</span></li>
+        <li><b>Disputes re-derive against The Graph, then settle onchain</b><span><code>POST /v1/disputes</code> re-queries each pinned deployment at the receipt’s blocks. Match → rejected (no slash). Mismatch → ledger slash <em>and</em> <code>openDispute</code> + arbiter <code>resolveDispute(true)</code> on <code>SourcePayouts</code> when the digest was <code>recordRead</code>. Ambiguous → no slash.</span></li>
         <li><b>Testnet only</b><span>Hedera testnet HBAR, a testnet facilitator, and a testnet <code>SourcePayouts</code> deployment.</span></li>
         <li><b>Resale reads are operator-funded</b><span>Bazantic collects upstream in another currency; sources are still paid in HBAR out of our float. The float is now an auditable ledger on <code>/health</code>.</span></li>
         <li><b>Refusal cannot be bought around</b><span>A caller may tighten a freshness bound. Nothing a caller sends can loosen one past the family policy.</span></li>
@@ -648,7 +648,7 @@
     An MCP server ships alongside this, so an agent can hold the same paywalled read as a tool.
     Built for ETHOnline · MIT licensed.
     <div class="sig">
-      <img src="/assets/sourcemark-icon-light.svg?v=2" alt="" />
+      <img src="/assets/sourcemark-icon-light.svg?v=3" alt="" />
       <span class="wm">source<i>mark</i></span>
       <span class="faint">· every answer names its sources, or there is no answer</span>
     </div>
@@ -1260,6 +1260,15 @@ window.disputeReceipt = async function (digest) {
       ? '<span class="s">expected <code>' + esc(short(repro.expectedAnswerHash, 14, 8)) + '</code>' +
         (repro.recomputedAnswerHash
           ? ' · recomputed <code>' + esc(short(repro.recomputedAnswerHash, 14, 8)) + '</code>'
+          : '') + '</span>'
+      : '') +
+    (d.onchain
+      ? '<span class="s">Onchain: ' + esc(d.onchain.detail) +
+        (d.onchain.openExplorer
+          ? ' — <a href="' + esc(d.onchain.openExplorer) + '" target="_blank" rel="noopener">openDispute</a>'
+          : '') +
+        (d.onchain.resolveExplorer
+          ? ' · <a href="' + esc(d.onchain.resolveExplorer) + '" target="_blank" rel="noopener">resolveDispute</a>'
           : '') + '</span>'
       : '') +
     '<span class="s">' + esc(r.body.note || '') + '</span></div>' +

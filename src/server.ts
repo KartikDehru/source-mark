@@ -20,7 +20,7 @@ import {
 } from './split.js';
 import { reproduceReceipt } from './reproduce.js';
 import { digestOf } from './receipt.js';
-import { operatorEvmAddress, recordReadOnchain, checkOnchainSplit } from './split-onchain.js';
+import { operatorEvmAddress, recordReadOnchain, checkOnchainSplit, executeOnchainDispute, ensureReceiptOnchain } from './split-onchain.js';
 import { consentMessage, listConsents, recordConsent } from './consent.js';
 import { recordResaleFloat, resaleFloatSummary } from './resale-float.js';
 import { openApiDocument } from './openapi.js';
@@ -625,13 +625,27 @@ app.post('/v1/disputes', async (c) => {
     };
 
     if (repro.verdict === 'MISMATCH') {
-      const entry = upholdDispute(receipt.digest, claimant, body.reason, chargedTo, reproduceMeta);
+      const onchain = await executeOnchainDispute({
+        digest: receipt.digest,
+        reason: body.reason,
+        upheld: true,
+      });
+      const entry = upholdDispute(receipt.digest, claimant, body.reason, chargedTo, {
+        ...reproduceMeta,
+        onchain: onchain ?? null,
+      });
       return c.json({
         dispute: entry,
         reproduction: repro,
+        onchain,
         note:
           'Re-derive failed: answerHash does not match live Graph data at the recorded blocks. ' +
-          'Refunded from unvested holdback of contributing sources.',
+          'Ledger holdback slashed' +
+          (onchain?.ok
+            ? '; onchain openDispute + resolveDispute(upheld) confirmed on HashScan.'
+            : onchain
+              ? `; onchain leg skipped: ${onchain.detail}`
+              : '.'),
       });
     }
 
@@ -640,7 +654,9 @@ app.post('/v1/disputes', async (c) => {
       return c.json({
         dispute: entry,
         reproduction: repro,
-        note: 'Re-derive succeeded: the receipt still stands. No slash.',
+        note:
+          'Re-derive succeeded: the receipt still stands. No slash. ' +
+          '(Onchain openDispute is not filed on MATCH — that would burn a dispute bond for nothing.)',
       });
     }
 
@@ -692,11 +708,26 @@ app.post('/demo/falsify-receipt', async (c) => {
   };
   appendTo<SignedReceipt>('receipts', falsified);
 
+  // Record the twin onchain so Demo slash can openDispute + resolveDispute for real.
+  const onchain = await ensureReceiptOnchain({
+    digest,
+    grossTinybar: original.body.payment.amount || config.x402.price,
+    deploymentIds: original.body.sources.map((s) => s.deploymentId),
+    buyer: operatorEvmAddress() ?? undefined,
+  });
+
   return c.json({
     originalDigest: original.digest,
     falsifiedDigest: digest,
+    onchain,
     note:
-      'Stored an unsigned twin with a corrupted answerHash. POST /v1/disputes with falsifiedDigest to watch re-derive slash the holdback.',
+      'Stored an unsigned twin with a corrupted answerHash' +
+      (onchain?.transaction && onchain.transaction !== 'already-recorded'
+        ? ' and recorded it onchain so openDispute can run.'
+        : onchain
+          ? '.'
+          : ' (onchain record skipped — ledger slash still works).') +
+      ' POST /v1/disputes with falsifiedDigest to watch re-derive slash the holdback.',
   });
 });
 

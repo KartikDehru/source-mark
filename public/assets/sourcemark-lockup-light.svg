@@ -1,35 +1,12 @@
 <svg width="556" height="160" viewBox="52 38 556 160" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="SourceMark">
   <title>SourceMark</title>
-
-  <!-- Light-theme lockup: transparent ground, ink geometry, brand mint kept for
-       the mark itself. The dark original assumes a near-black plate behind it,
-       which a paper background does not provide.
-
-       viewBox is cropped to the artwork. The 680x240 original is mostly empty
-       ground, which renders the wordmark at a fraction of the box height
-       wherever the lockup is placed by height.
-
-       Comments here stay plain ASCII on purpose: a stray control byte in an
-       SVG is a hard XML parse error, and an SVG loaded through an img tag
-       fails silently to a broken-image glyph when that happens. -->
-
-  <!-- the field of candidate sources -->
-  <polygon points="120,50 180.6,85 180.6,155 120,190 59.4,155 59.4,85"
-           fill="none" stroke="#13161C" stroke-width="6" stroke-linejoin="round"/>
-
-  <!-- trace from the query origin to the one verified vertex -->
-  <line x1="120" y1="120" x2="120" y2="50"
-        stroke="#13161C" stroke-width="4" stroke-linecap="round" opacity="0.34"/>
-
-  <!-- The mark. Mint alone washes out on paper, so it carries an ink ring;
-       that keeps the brand colour and still reads as a deliberate marker. -->
-  <circle cx="120" cy="50" r="9" fill="#2FE6A6" stroke="#13161C" stroke-width="2.5"/>
-
-  <!-- the query origin -->
-  <circle cx="120" cy="120" r="6" fill="#A8ABAE"/>
-
-  <!-- Wordmark. "mark" uses a deepened mint because #2FE6A6 as text on #F6F7F7
-       is roughly 1.6:1, and a logo is not an excuse for unreadable type. -->
+  <!-- Light lockup: nib mark + wordmark. -->
+  <g transform="translate(120 120) rotate(-38) scale(0.92)">
+    <path d="M0 -78 L34 18 Q36 42 0 68 Q-36 42 -34 18 Z" fill="#13161C"/>
+    <path d="M0 -62 L0 52" fill="none" stroke="#F6F7F7" stroke-width="3.5" stroke-linecap="round" opacity="0.35"/>
+    <ellipse cx="0" cy="8" rx="11" ry="15" fill="#2FE6A6"/>
+    <path d="M0 -78 L14 -44 L0 -52 L-14 -44 Z" fill="#2FE6A6"/>
+  </g>
   <text x="260" y="145" font-family="'Bricolage Grotesque','Helvetica Neue',Arial,sans-serif"
         font-size="60" font-weight="700" letter-spacing="-1.2">
     <tspan fill="#13161C">source</tspan><tspan fill="#00875A">mark</tspan>

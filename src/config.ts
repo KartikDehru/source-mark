@@ -118,6 +118,9 @@ export const config = {
     contractAddress: str('SOURCE_PAYOUTS_ADDRESS'),
     recorderKey: str('OPERATOR_PRIVATE_KEY'),
     arbiterAddress: str('ARBITER_ADDRESS'),
+    /** Signs resolveDispute after a reproduce MISMATCH. Must control arbiterAddress. */
+    arbiterKey: str('ARBITER_PRIVATE_KEY'),
+    disputeBondTinybar: str('DISPUTE_BOND_TINYBAR', '100000000'),
     jsonRpc: str('HEDERA_JSON_RPC', 'https://testnet.hashio.io/api'),
   },
 
@@ -156,6 +159,11 @@ export function configWarnings(): string[] {
   if (config.split.mode === 'onchain' && !config.split.arbiterAddress) {
     w.push(
       'SPLIT_MODE=onchain but ARBITER_ADDRESS is unset: run `npm run payouts:set-arbiter` after setting a distinct ARBITER_ADDRESS.',
+    );
+  }
+  if (config.split.mode === 'onchain' && config.split.arbiterAddress && !config.split.arbiterKey) {
+    w.push(
+      'ARBITER_PRIVATE_KEY is unset: reproduce MISMATCH can slash the ledger but cannot resolveDispute onchain.',
     );
   }
   if (config.split.mode === 'onchain' && config.split.recorderKey && config.split.arbiterAddress) {

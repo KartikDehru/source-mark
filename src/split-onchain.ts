@@ -65,6 +65,51 @@ const RECORD_READ_ABI = [
     inputs: [],
     outputs: [{ name: '', type: 'address' }],
   },
+  {
+    type: 'function',
+    name: 'disputeBond',
+    stateMutability: 'view',
+    inputs: [],
+    outputs: [{ name: '', type: 'uint128' }],
+  },
+  {
+    type: 'function',
+    name: 'receiptOf',
+    stateMutability: 'view',
+    inputs: [{ name: 'receiptDigest', type: 'bytes32' }],
+    outputs: [
+      {
+        type: 'tuple',
+        components: [
+          { name: 'buyer', type: 'address' },
+          { name: 'gross', type: 'uint128' },
+          { name: 'recordedAt', type: 'uint64' },
+          { name: 'disputed', type: 'bool' },
+          { name: 'sources', type: 'bytes32[]' },
+        ],
+      },
+    ],
+  },
+  {
+    type: 'function',
+    name: 'openDispute',
+    stateMutability: 'payable',
+    inputs: [
+      { name: 'receiptDigest', type: 'bytes32' },
+      { name: 'reason', type: 'string' },
+    ],
+    outputs: [],
+  },
+  {
+    type: 'function',
+    name: 'resolveDispute',
+    stateMutability: 'nonpayable',
+    inputs: [
+      { name: 'receiptDigest', type: 'bytes32' },
+      { name: 'upheld', type: 'bool' },
+    ],
+    outputs: [],
+  },
 ] as const;
 
 /** Native HBAR has 8 decimals; the EVM sees 18. */
@@ -241,6 +286,232 @@ export async function recordReadOnchain(args: {
       };
     } catch (err) {
       log.error('onchain split failed; read still answered and paid', { err: String(err), digest: args.digest });
+      return null;
+    }
+  };
+
+  const next = queue.then(run, run);
+  queue = next.catch(() => undefined);
+  return next;
+}
+
+export interface OnchainDisputeResult {
+  ok: boolean;
+  detail: string;
+  openTx?: string;
+  resolveTx?: string;
+  openExplorer?: string;
+  resolveExplorer?: string;
+  upheld: boolean;
+}
+
+function arbiterWallet() {
+  if (!config.split.arbiterKey) return null;
+  const key = config.split.arbiterKey.startsWith('0x')
+    ? (config.split.arbiterKey as `0x${string}`)
+    : (`0x${config.split.arbiterKey}` as `0x${string}`);
+  const account = privateKeyToAccount(key);
+  return createWalletClient({ account, chain: hederaTestnet, transport: http(config.split.jsonRpc) });
+}
+
+/**
+ * After a Graph re-derive MISMATCH (or MATCH→reject), drive the onchain dispute
+ * path: anyone opens with the dispute bond, the arbiter resolves from evidence.
+ *
+ * Non-fatal: ledger dispute already recorded; missing keys or an unrecorded
+ * digest just skips the chain leg and reports why.
+ */
+export async function executeOnchainDispute(args: {
+  digest: string;
+  reason: string;
+  upheld: boolean;
+}): Promise<OnchainDisputeResult | null> {
+  if (!onchainSplitEnabled()) return null;
+  if (!config.split.arbiterKey) {
+    return {
+      ok: false,
+      upheld: args.upheld,
+      detail: 'ARBITER_PRIVATE_KEY unset — ledger slash only',
+    };
+  }
+
+  const run = async (): Promise<OnchainDisputeResult> => {
+    try {
+      const { wallet, publicClient, address } = getClients();
+      const digest = args.digest as `0x${string}`;
+      const recorded = await publicClient.readContract({
+        address,
+        abi: RECORD_READ_ABI,
+        functionName: 'receiptOf',
+        args: [digest],
+      });
+      if (!recorded.recordedAt) {
+        return {
+          ok: false,
+          upheld: args.upheld,
+          detail: 'Digest is not onchain (no recordRead). Ledger dispute only.',
+        };
+      }
+      if (recorded.disputed) {
+        return {
+          ok: false,
+          upheld: args.upheld,
+          detail: 'Receipt already disputed onchain',
+        };
+      }
+
+      const bond = await publicClient.readContract({
+        address,
+        abi: RECORD_READ_ABI,
+        functionName: 'disputeBond',
+      });
+
+      const openHash = await wallet.writeContract({
+        address,
+        abi: RECORD_READ_ABI,
+        functionName: 'openDispute',
+        args: [digest, args.reason.slice(0, 200)],
+        value: bond,
+        chain: hederaTestnet,
+        account: wallet.account!,
+      });
+      const openRcpt = await publicClient.waitForTransactionReceipt({ hash: openHash });
+      if (openRcpt.status !== 'success') {
+        return {
+          ok: false,
+          upheld: args.upheld,
+          openTx: openHash,
+          openExplorer: `https://hashscan.io/testnet/transaction/${openHash}`,
+          detail: 'openDispute reverted',
+        };
+      }
+
+      const arbiter = arbiterWallet();
+      if (!arbiter) {
+        return {
+          ok: false,
+          upheld: args.upheld,
+          openTx: openHash,
+          openExplorer: `https://hashscan.io/testnet/transaction/${openHash}`,
+          detail: 'Opened onchain but arbiter wallet unavailable for resolveDispute',
+        };
+      }
+
+      const resolveHash = await arbiter.writeContract({
+        address,
+        abi: RECORD_READ_ABI,
+        functionName: 'resolveDispute',
+        args: [digest, args.upheld],
+        chain: hederaTestnet,
+        account: arbiter.account!,
+      });
+      const resolveRcpt = await publicClient.waitForTransactionReceipt({ hash: resolveHash });
+      if (resolveRcpt.status !== 'success') {
+        return {
+          ok: false,
+          upheld: args.upheld,
+          openTx: openHash,
+          resolveTx: resolveHash,
+          openExplorer: `https://hashscan.io/testnet/transaction/${openHash}`,
+          resolveExplorer: `https://hashscan.io/testnet/transaction/${resolveHash}`,
+          detail: 'resolveDispute reverted',
+        };
+      }
+
+      log.info('onchain dispute resolved from reproduce', {
+        digest: args.digest,
+        upheld: args.upheld,
+        openHash,
+        resolveHash,
+      });
+
+      return {
+        ok: true,
+        upheld: args.upheld,
+        openTx: openHash,
+        resolveTx: resolveHash,
+        openExplorer: `https://hashscan.io/testnet/transaction/${openHash}`,
+        resolveExplorer: `https://hashscan.io/testnet/transaction/${resolveHash}`,
+        detail: args.upheld
+          ? 'Opened + arbiter upheld onchain after Graph re-derive MISMATCH'
+          : 'Opened + arbiter rejected onchain after Graph re-derive MATCH',
+      };
+    } catch (err) {
+      log.error('onchain dispute failed', { err: String(err), digest: args.digest });
+      return {
+        ok: false,
+        upheld: args.upheld,
+        detail: err instanceof Error ? err.message : String(err),
+      };
+    }
+  };
+
+  const next = queue.then(run, run);
+  queue = next.catch(() => undefined);
+  return next;
+}
+
+/**
+ * Ensure a digest exists onchain so openDispute can run (used by the falsified
+ * twin demo). Pays grossTinybar from the operator and waits for confirmation.
+ */
+export async function ensureReceiptOnchain(args: {
+  digest: string;
+  grossTinybar: string;
+  deploymentIds: string[];
+  buyer?: string;
+}): Promise<OnchainSplit | null> {
+  if (!onchainSplitEnabled()) return null;
+  if (args.deploymentIds.length === 0) return null;
+
+  const run = async (): Promise<OnchainSplit | null> => {
+    try {
+      const { wallet, publicClient, address } = getClients();
+      const digest = args.digest as `0x${string}`;
+      const existing = await publicClient.readContract({
+        address,
+        abi: RECORD_READ_ABI,
+        functionName: 'receiptOf',
+        args: [digest],
+      });
+      if (existing.recordedAt) {
+        return {
+          contract: address,
+          transaction: 'already-recorded',
+          explorer: `https://hashscan.io/testnet/contract/${address}`,
+          sourceIds: args.deploymentIds.map(sourceIdFor),
+        };
+      }
+
+      const buyer =
+        (args.buyer && /^0x[0-9a-fA-F]{40}$/.test(args.buyer) ? getAddress(args.buyer) : null) ??
+        operatorEvmAddress();
+      if (!buyer) return null;
+
+      const sourceIds = args.deploymentIds.map(sourceIdFor);
+      const value = BigInt(args.grossTinybar) * TINYBAR_TO_WEIBAR;
+      const hash = await wallet.writeContract({
+        address,
+        abi: RECORD_READ_ABI,
+        functionName: 'recordRead',
+        args: [digest, sourceIds, buyer],
+        value,
+        chain: hederaTestnet,
+        account: wallet.account!,
+      });
+      const rcpt = await publicClient.waitForTransactionReceipt({ hash });
+      if (rcpt.status !== 'success') {
+        log.error('ensureReceiptOnchain reverted', { hash, digest: args.digest });
+        return null;
+      }
+      return {
+        contract: address,
+        transaction: hash,
+        explorer: `https://hashscan.io/testnet/transaction/${hash}`,
+        sourceIds,
+      };
+    } catch (err) {
+      log.error('ensureReceiptOnchain failed', { err: String(err), digest: args.digest });
       return null;
     }
   };

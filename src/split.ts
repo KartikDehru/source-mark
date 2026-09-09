@@ -63,6 +63,15 @@ export interface DisputeEntry {
     expectedAnswerHash: string;
     recomputedAnswerHash: string | null;
   };
+  onchain?: {
+    ok: boolean;
+    detail: string;
+    openTx?: string;
+    resolveTx?: string;
+    openExplorer?: string;
+    resolveExplorer?: string;
+    upheld?: boolean;
+  } | null;
 }
 
 export function computeSplit(
@@ -204,7 +213,7 @@ export function upholdDispute(
   claimant: string,
   reason: string,
   chargedTo: string[],
-  extra?: Partial<Pick<DisputeEntry, 'decision' | 'reproduce'>>,
+  extra?: Partial<Pick<DisputeEntry, 'decision' | 'reproduce' | 'onchain'>>,
 ): DisputeEntry {
   const summaries = payoutSummaries();
   const available = chargedTo.reduce((sum, id) => {
@@ -230,7 +239,7 @@ export function rejectDispute(
   reason: string,
   chargedTo: string[],
   status: 'REJECTED' | 'AMBIGUOUS',
-  extra?: Partial<Pick<DisputeEntry, 'decision' | 'reproduce'>>,
+  extra?: Partial<Pick<DisputeEntry, 'decision' | 'reproduce' | 'onchain'>>,
 ): DisputeEntry {
   return recordDispute({
     ts: Math.floor(Date.now() / 1000),
