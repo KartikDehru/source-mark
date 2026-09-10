@@ -740,8 +740,19 @@ app.post('/demo/falsify-receipt', async (c) => {
     : receipts[receipts.length - 1];
   if (!original) return c.json({ error: 'NO_RECEIPT', detail: 'Run a paid read first' }, 404);
 
+  // Corrupt both the summary hash and one anchored source value. Re-derive
+  // treats answerHash-only tampering as MATCH when live Graph values still
+  // agree with the receipt's per-source anchors — which is correct for "the
+  // sources are fine" but useless for the demo slash path.
+  const sources = original.body.sources.map((s, i) => {
+    if (i !== 0) return s;
+    const v = typeof s.value === 'number' ? s.value : Number(s.value);
+    const tampered = Number.isFinite(v) ? v * 1.37 + 1 : 999_999;
+    return { ...s, value: tampered };
+  });
   const falsifiedBody = {
     ...original.body,
+    sources,
     answerHash: digestOf({ tampered: true, at: Date.now() }) as `0x${string}`,
   };
   const digest = digestOf(falsifiedBody);
