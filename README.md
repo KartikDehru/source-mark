@@ -249,7 +249,7 @@ The thing worth pointing at is what *doesn't* change. Both channels run one `com
 
 | Contract | Network | Address |
 | --- | --- | --- |
-| `SourcePayouts` | Hedera testnet (296) | [`0xdd9e55d7b9cd2b1eef59765d34aa445c78497b0f`](https://hashscan.io/testnet/contract/0xdd9e55d7b9cd2b1eef59765d34aa445c78497b0f) |
+| `SourcePayouts` | Hedera testnet (296) | [`0x5c88d2722a0c883fbbbc8e60a10db4353e6c7cbd`](https://hashscan.io/testnet/contract/0x5c88d2722a0c883fbbbc8e60a10db4353e6c7cbd) |
 
 All six pinned deployments are registered as sources. Check live state with
 `npm run payouts:status`, which reads the contract directly and verifies that

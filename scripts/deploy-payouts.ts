@@ -12,7 +12,7 @@
  */
 
 import { network } from 'hardhat';
-import { keccak256, toBytes, getAddress, formatEther } from 'viem';
+import { keccak256, toBytes, getAddress, formatEther, formatUnits } from 'viem';
 import { readFileSync } from 'node:fs';
 import type {} from '@nomicfoundation/hardhat-viem';
 
@@ -36,7 +36,10 @@ const ARBITER = process.env.ARBITER_ADDRESS;
 const ROUTING_FEE_BPS = Number(process.env.ROUTING_FEE_BPS ?? 1000);
 const HOLDBACK_BPS = Number(process.env.HOLDBACK_BPS ?? 2000);
 const VESTING = BigInt(process.env.HOLDBACK_VESTING_SECONDS ?? 604800);
-const BOND = BigInt(process.env.DISPUTE_BOND_TINYBAR ?? 100_000_000) * 10_000_000_000n; // tinybar → weibar
+const BOND = BigInt(process.env.DISPUTE_BOND_TINYBAR ?? 100_000_000);
+// Hedera JSON-RPC: constructor args are stored as-is, but msg.value arrives in
+// TINYBAR (relay divides weibar by 1e10). disputeBond must therefore be tinybar
+// so openDispute's `msg.value != disputeBond` check can ever pass.
 // Short on testnet so the silence→uphold path is demoable; raise for production.
 const RESOLVE_WINDOW = BigInt(process.env.DISPUTE_RESOLVE_SECONDS ?? 120);
 
@@ -67,7 +70,7 @@ async function main(): Promise<void> {
   }
 
   console.log(
-    `${DIM}fee ${ROUTING_FEE_BPS}bps · holdback ${HOLDBACK_BPS}bps · vesting ${VESTING}s · bond ${formatEther(BOND)} HBAR · resolve window ${RESOLVE_WINDOW}s${RESET}\n`,
+    `${DIM}fee ${ROUTING_FEE_BPS}bps · holdback ${HOLDBACK_BPS}bps · vesting ${VESTING}s · bond ${formatUnits(BOND, 8)} HBAR (tinybar) · resolve window ${RESOLVE_WINDOW}s${RESET}\n`,
   );
 
   const contract = await viem.deployContract('SourcePayouts', [

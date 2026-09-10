@@ -144,8 +144,10 @@ const RECORD_READ_ABI = [
   },
 ] as const;
 
-/** Native HBAR has 8 decimals; the EVM sees 18. */
+/** Native HBAR has 8 decimals; the EVM sees 18. Hedera msg.value is tinybar. */
 const TINYBAR_TO_WEIBAR = 10_000_000_000n;
+/** Hedera gas estimates often under-price payable resolve paths; pin a floor. */
+const DISPUTE_RESOLVE_GAS = 500_000n;
 
 export interface OnchainSplit {
   contract: string;
@@ -395,7 +397,7 @@ export async function executeOnchainDispute(args: {
         };
       }
 
-      const [bond, resolveSeconds] = await Promise.all([
+      const [bondTinybar, resolveSeconds] = await Promise.all([
         publicClient.readContract({
           address,
           abi: RECORD_READ_ABI,
@@ -408,14 +410,19 @@ export async function executeOnchainDispute(args: {
         }),
       ]);
 
+      // Same weibar→tinybar relay rule as recordRead: send weibar so msg.value
+      // lands as the tinybar amount stored in disputeBond.
+      const bondValue = bondTinybar * TINYBAR_TO_WEIBAR;
+
       const openHash = await wallet.writeContract({
         address,
         abi: RECORD_READ_ABI,
         functionName: 'openDispute',
         args: [digest, args.reason.slice(0, 200)],
-        value: bond,
+        value: bondValue,
         chain: hederaTestnet,
         account: wallet.account!,
+        gas: DISPUTE_RESOLVE_GAS,
       });
       const openRcpt = await publicClient.waitForTransactionReceipt({ hash: openHash });
       if (openRcpt.status !== 'success') {
@@ -475,6 +482,7 @@ export async function executeOnchainDispute(args: {
         args: [digest, args.upheld],
         chain: hederaTestnet,
         account: arbiter.account!,
+        gas: DISPUTE_RESOLVE_GAS,
       });
       const resolveRcpt = await publicClient.waitForTransactionReceipt({ hash: resolveHash });
       if (resolveRcpt.status !== 'success') {
@@ -511,11 +519,15 @@ export async function executeOnchainDispute(args: {
           : 'Opened + arbiter rejected onchain after Graph re-derive MATCH',
       };
     } catch (err) {
-      log.error('onchain dispute failed', { err: String(err), digest: args.digest });
+      const raw = err instanceof Error ? err.message : String(err);
+      const detail = raw.includes('0xfb678272')
+        ? 'openDispute BadBond: disputeBond is likely stored in weibar while msg.value arrives in tinybar. Redeploy with DISPUTE_BOND_TINYBAR as tinybar (no ×1e10) and send value = bond × 1e10.'
+        : raw;
+      log.error('onchain dispute failed', { err: raw, digest: args.digest });
       return {
         ok: false,
         upheld: args.upheld,
-        detail: err instanceof Error ? err.message : String(err),
+        detail,
       };
     }
   };
@@ -578,6 +590,7 @@ export async function resolveOnchainAfterDeadline(digest: string): Promise<Oncha
         args: [dig],
         chain: hederaTestnet,
         account: wallet.account!,
+        gas: DISPUTE_RESOLVE_GAS,
       });
       const rcpt = await publicClient.waitForTransactionReceipt({ hash });
       if (rcpt.status !== 'success') {
@@ -706,10 +719,18 @@ export async function checkOnchainSplit(): Promise<string[]> {
       problems.push(`No contract at SOURCE_PAYOUTS_ADDRESS ${address} on chain 296.`);
       return problems;
     }
-    const [operator, arbiter] = await Promise.all([
+    const [operator, arbiter, bond] = await Promise.all([
       publicClient.readContract({ address, abi: RECORD_READ_ABI, functionName: 'operator' }),
       publicClient.readContract({ address, abi: RECORD_READ_ABI, functionName: 'arbiter' }),
+      publicClient.readContract({ address, abi: RECORD_READ_ABI, functionName: 'disputeBond' }),
     ]);
+    // On Hedera, disputeBond must be tinybar-scale (~1e8 for 1 HBAR). Values near
+    // 1e18 mean the constructor was given weibar and openDispute can never match.
+    if (bond >= 1_000_000_000_000n) {
+      problems.push(
+        `Onchain disputeBond (${bond}) looks weibar-scaled. Redeploy with DISPUTE_BOND_TINYBAR in tinybar (no ×1e10) or openDispute will BadBond.`,
+      );
+    }
     if (operator.toLowerCase() === arbiter.toLowerCase()) {
       problems.push(
         `Onchain arbiter (${arbiter}) is still the operator. Set ARBITER_ADDRESS to a distinct key and run npm run payouts:set-arbiter.`,
