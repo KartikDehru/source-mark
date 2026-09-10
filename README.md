@@ -327,10 +327,12 @@ supplyAPY — and both sources were paid **in HBAR on Hedera** in
 The same request with `strictAge=1` returns `409`, free, `channel: "resale"`,
 nothing settled and no source paid. The policy is not relaxed for resold reads.
 
-Bazantic track setup (gateway + multi-service Recipe draft for Hedera Mirror
-Node): **[bazantic/SETUP.md](./bazantic/SETUP.md)**. The gateway is registered;
-set the dashboard API credential and publish the Recipe from
-`bazantic/recipe-sourcemark-proven-lending-rate.json` to finish qualification.
+Bazantic track setup (gateway + multi-service Recipe for Hedera Mirror
+Node): **[bazantic/SETUP.md](./bazantic/SETUP.md)**. The public recipe draft is
+[`bazantic/recipe-sourcemark-proven-lending-rate.json`](./bazantic/recipe-sourcemark-proven-lending-rate.json)
+(the Bazantic dashboard URL requires a login, so judges should use the JSON in
+this repo). The gateway is registered; set the dashboard API credential and
+publish that Recipe to finish qualification.
 
 Bazantic also generates an MCP endpoint per gateway from the same spec. It was
 observed serving 7 tools carrying our own `operationId`s and descriptions —
@@ -355,18 +357,10 @@ Reproduce with `npm run pay`, `npm run pay -- --strict-age 1`,
 
 ## What this does **not** do
 
-Stated up front, because the mechanism is easy to overstate:
-
-1. **Payout addresses are still stand-ins.** Consent is real — `POST /v1/consent` verifies an EIP-191 signature from the registered payout key, overlays `consent: consented` on the live registry, and `npm run consent:demo` proves the path with the public Hardhat mnemonic. What it does *not* claim is that Messari or Aave have joined. The addresses remain derived from `test test … junk` until a real team registers their own.
-2. **Holdback percentages are unpriced.** We demonstrate that the mechanism executes correctly. We do not claim the numbers are correctly calibrated against real risk. The dispute bond (`DISPUTE_BOND_TINYBAR`, default 1 HBAR) is likewise a demo default, not a market-priced griefing cost.
-3. **Dispute resolution is time-bounded, not fully trustless.** Anyone can *open* a dispute permissionlessly. A named arbiter may uphold or reject early. If the arbiter is silent past `disputeResolveSeconds`, anyone may call `resolveAfterDeadline`, which upholds and refunds the buyer. That is a timed default against silence — not onchain re-derivation of a subgraph query.
-4. **The arbiter is separated from the operator on this deployment.** `ARBITER_ADDRESS` is a distinct key, rotated onchain with `npm run payouts:set-arbiter`. `/health` and `payouts:status` flag any reversion to the same-key setup. Separation is operational; the deadline path is what prevents permanent freeze if that key goes dark.
-5. **The liability window can be griefed.** An open dispute freezes the named sources' holdback so it cannot be waited out. The bond is the only thing making a frivolous freeze expensive.
-6. **Liability expires.** Once a holdback vests it is gone; a dispute raised after `vestingSeconds` recovers nothing. Fraud discovered late is not recoverable.
-7. **A successful read proves provenance, not truth.** On an `identical` family, agreement between independent deployments is real evidence — but both could be indexing the same faulty logic, and agreement would not catch that. On a `peer` family the headline is a market summary, not a verified value; `range` and the per-source table are the honest output.
-8. **Amounts are testnet-scale.** The liability pool is a working demonstration, not insurance.
-9. **A resold read is funded by the operator, not by the caller's dollars.** The two rails never touch: Bazantic collects USDC on Base and we pay sources HBAR on Hedera out of the operator float. Nothing bridges them. The float *is* now an auditable ledger (`/health` → `resale.float`, and `data/resale-float.json`), so what we fronted is visible even though the currencies never meet.
-10. **Local tunneling is still ephemeral.** `npm run tunnel` remains useful for local demos. Production and judging links should use a stable host (this deployment runs on Railway) so gateway registrations and receipts stay reproducible.
+1. **Payees are opt-in demo operators.** Consent is real EIP-191. Production indexer teams have not necessarily registered.
+2. **Disputes are evidence-backed, not fully trustless.** Graph re-derive offchain; onchain open plus arbiter or deadline uphold.
+3. **Testnet scale.** Hedera testnet HBAR and a demo liability pool — not insurance.
+4. **Resale float is operator-funded.** Bazantic USDC and our HBAR rails do not bridge.
 
 ---
 
@@ -374,12 +368,13 @@ Stated up front, because the mechanism is easy to overstate:
 
 ```
 src/          gateway: registry · graph · anchor · resolver · x402 · receipt · split · server
+sdk/          thin TypeScript client for the HTTP API
 registry/     families.json — the conformance registry (data)
 client/       one-shot CLI buyer
 agent/        autonomous buyer on a loop
 mcp/          MCP server + SKILL.md
 contracts/    SourcePayouts.sol
-public/       hosted demo page + brand assets (served read-only from /assets)
+public/       multi-page site (home · demo · explore · sdk) + brand assets
 test/         aggregation + freshness tests; test/contracts/ for Solidity
 scripts/      doctors and one-shot tools (below)
 ```

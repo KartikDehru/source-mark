@@ -1,0 +1,167 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>SourceMark - no proof, no answer</title>
+<meta name="description" content="Paid, provenance-checked reads of standardized onchain data. x402 on Hedera, The Graph, onchain split with slashable holdback." />
+<link rel="icon" type="image/png" href="/assets/sourcemark-icon.png?v=7" />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400..800&family=Spline+Sans+Mono:wght@300..700&display=swap" rel="stylesheet" />
+<link rel="stylesheet" href="/css/site.css?v=7" />
+</head>
+<body>
+<nav>
+  <div class="inner">
+    <a class="mark" href="/">
+      <img src="/assets/sourcemark-icon.png?v=7" alt="" />
+      <span class="wm">source<i>mark</i></span>
+    </a>
+    <div class="links">
+      <a href="/" class="on">Home</a>
+      <a href="/demo">Live demo</a>
+      <a href="/explore">Data</a>
+      <a href="/sdk">SDK</a>
+      <a href="https://github.com/KartikDehru/source-mark" target="_blank" rel="noopener">Docs</a>
+      <a href="https://github.com/KartikDehru/source-mark/blob/main/bazantic/recipe-sourcemark-proven-lending-rate.json" target="_blank" rel="noopener">Recipe</a>
+      <a href="/openapi.json" target="_blank" rel="noopener">API</a>
+    </div>
+    <div class="right">
+      <span class="netpill"><span class="led" id="navled"></span> <span id="navnet">hedera testnet</span></span>
+    </div>
+  </div>
+</nav>
+
+<main id="top">
+  <section class="hero">
+    <svg class="smoke" aria-hidden="true" xmlns="http://www.w3.org/2000/svg">
+      <filter id="sm" x="0" y="0" width="100%" height="100%">
+        <feTurbulence type="fractalNoise" baseFrequency="0.009" numOctaves="4" seed="7" />
+        <feColorMatrix type="saturate" values="0" />
+        <feComponentTransfer><feFuncA type="linear" slope="0.5" intercept="0" /></feComponentTransfer>
+      </filter>
+      <rect width="100%" height="100%" filter="url(#sm)" />
+      <rect width="100%" height="100%" fill="url(#fade)" />
+      <defs>
+        <radialGradient id="fade" cx="62%" cy="30%" r="62%">
+          <stop offset="55%" stop-color="#f6f7f7" stop-opacity="0" />
+          <stop offset="100%" stop-color="#f6f7f7" stop-opacity="1" />
+        </radialGradient>
+      </defs>
+    </svg>
+    <div class="wrap">
+      <div class="brand">
+        <img src="/assets/sourcemark-icon.png?v=7" alt="" />
+        <span class="wm">source<i>mark</i></span>
+      </div>
+      <h1>No proof,<br /><span class="hl">no answer.</span><span class="caret"></span></h1>
+      <p class="sub">
+        A metered read layer for onchain data that <b>declines to answer</b> rather than
+        guess. One query fans out across independently pinned subgraph deployments speaking
+        the same schema, each checked against live chain head.
+      </p>
+      <p class="sub">
+        Enough of them fresh and in agreement, you get a number and a signed receipt.
+        Otherwise you get a refusal - <b>and a refusal is free</b>.
+      </p>
+      <a class="cta" href="/demo"><span class="dia">*</span> run it live | real HBAR, real subgraphs -></a>
+      <div class="evidence" id="evidence">
+        <div class="ev"><div class="k">reading service...</div><div class="v">-</div></div>
+      </div>
+      <div class="builton">
+        <span class="t">// built on</span>
+        <span class="row">
+          <span class="b">The Graph</span>
+          <span class="b">Hedera</span>
+          <span class="b">x402 | Blocky402</span>
+          <span class="b">Bazantic</span>
+        </span>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <div class="wrap">
+      <div class="invert">
+        <h3>Verified before the read. Settled <span class="hl">only after</span> it passes.</h3>
+        <p>
+          A read that fails the provenance policy returns <code>409 REFUSED</code> and is never
+          charged. You only ever pay for an answer this service is willing to stand behind.
+        </p>
+        <div class="foot">
+          <span>402 unpaid</span>
+          <span>409 refused | 0 charged</span>
+          <span>200 answered | signed | split onchain</span>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section id="how">
+    <div class="wrap">
+      <p class="lbl">// how the gate works</p>
+      <h2 class="sec">Seven stages between your query and a number.</h2>
+      <p class="lede">The fourth is the product. Everything before it is plumbing; everything after only runs because it passed.</p>
+      <div class="steps-grid">
+        <div class="st"><div class="top"><span class="no">01</span><span class="role">paywall</span></div><h4>Challenge</h4><p>Unpaid read returns <code>402</code> with x402 requirements. No key, no signup.</p></div>
+        <div class="st"><div class="top"><span class="no">02</span><span class="role">verify</span></div><h4>Prove funds</h4><p>Facilitator validates the signed Hedera transfer. Nothing moves yet.</p></div>
+        <div class="st"><div class="top"><span class="no">03</span><span class="role">fan out</span></div><h4>Ask every source</h4><p>Same query hits every pinned deployment in the family via The Graph.</p></div>
+        <div class="st gate"><div class="top"><span class="no">04</span><span class="role">the product</span></div><h4><span>Provenance gate</span></h4><p>Lag, age, quorum, agreement. Any failure refuses the whole read.</p></div>
+        <div class="st"><div class="top"><span class="no">05</span><span class="role">money</span></div><h4>Settle or refuse</h4><p>Pass settles in HBAR. Fail returns 409, unsettled.</p></div>
+        <div class="st"><div class="top"><span class="no">06</span><span class="role">evidence</span></div><h4>Sign a receipt</h4><p>Answer, sources, and blocks - hashed and signed.</p></div>
+        <div class="st"><div class="top"><span class="no">07</span><span class="role">liability</span></div><h4>Split and hold back</h4><p>Sources get paid; a slashable slice stays unvested.</p></div>
+      </div>
+    </div>
+  </section>
+
+  <section id="stack">
+    <div class="wrap">
+      <p class="lbl">// built on</p>
+      <h2 class="sec">Three integrations, none decorative.</h2>
+      <div class="cards">
+        <div class="card"><div class="top"><h4>The Graph</h4><span class="role">the data</span></div><ul>
+          <li>Pinned deployment IDs and byte-identical schema hashes.</li>
+          <li>Live gateway queries - no fixtures on the serving path.</li>
+        </ul></div>
+        <div class="card"><div class="top"><h4>Hedera</h4><span class="role">the money</span></div><ul>
+          <li>x402 over HBAR via Blocky402; <code>SourcePayouts</code> for split and holdback.</li>
+          <li>Receipt digests anchored on HCS when configured.</li>
+        </ul></div>
+        <div class="card"><div class="top"><h4>Bazantic</h4><span class="role">distribution</span></div><ul>
+          <li>USDC-on-Base buyers hit the same gate via resale.</li>
+          <li><a href="https://github.com/KartikDehru/source-mark/blob/main/bazantic/recipe-sourcemark-proven-lending-rate.json" target="_blank" rel="noopener">Recipe JSON in this repo</a> (SourceMark + Hedera Mirror Node). The Bazantic dashboard copy needs a login.</li>
+        </ul></div>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <div class="wrap">
+      <p class="lbl">// stated plainly</p>
+      <h2 class="sec">What this does not do.</h2>
+      <ul class="limits">
+        <li><b>Payees are opt-in demo operators</b><span>Consent is real EIP-191. Production indexer teams have not necessarily registered.</span></li>
+        <li><b>Disputes are evidence-backed, not fully trustless</b><span>Graph re-derive offchain; onchain open plus arbiter or deadline uphold.</span></li>
+        <li><b>Testnet scale</b><span>Hedera testnet HBAR and a demo liability pool - not insurance.</span></li>
+        <li><b>Resale float is operator-funded</b><span>Bazantic USDC and our HBAR rails do not bridge.</span></li>
+      </ul>
+    </div>
+  </section>
+</main>
+
+<footer>
+  <div class="wrap">
+    <p class="lbl">// source mark</p>
+    <div class="sig">
+      <img src="/assets/sourcemark-icon.png?v=7" alt="" />
+      <span class="wm">source<i>mark</i></span>
+      <span class="faint">| every answer names its sources, or there is no answer</span>
+    </div>
+    <p class="byline">Made by <a href="https://github.com/KartikDehru" target="_blank" rel="noopener">Kartik Dehru</a> | <a href="https://github.com/KartikDehru/source-mark" target="_blank" rel="noopener">GitHub docs</a> | MIT | ETHOnline 2026</p>
+  </div>
+</footer>
+<script src="/js/common.js?v=7"></script>
+<script src="/js/home.js?v=7"></script>
+</body>
+</html>

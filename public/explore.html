@@ -1,0 +1,111 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>SourceMark - data explorer</title>
+<meta name="description" content="Paid, provenance-checked reads of standardized onchain data. x402 on Hedera, The Graph, onchain split with slashable holdback." />
+<link rel="icon" type="image/png" href="/assets/sourcemark-icon.png?v=7" />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400..800&family=Spline+Sans+Mono:wght@300..700&display=swap" rel="stylesheet" />
+<link rel="stylesheet" href="/css/site.css?v=7" />
+</head>
+<body>
+<nav>
+  <div class="inner">
+    <a class="mark" href="/">
+      <img src="/assets/sourcemark-icon.png?v=7" alt="" />
+      <span class="wm">source<i>mark</i></span>
+    </a>
+    <div class="links">
+      <a href="/">Home</a>
+      <a href="/demo">Live demo</a>
+      <a href="/explore" class="on">Data</a>
+      <a href="/sdk">SDK</a>
+      <a href="https://github.com/KartikDehru/source-mark" target="_blank" rel="noopener">Docs</a>
+      <a href="https://github.com/KartikDehru/source-mark/blob/main/bazantic/recipe-sourcemark-proven-lending-rate.json" target="_blank" rel="noopener">Recipe</a>
+      <a href="/openapi.json" target="_blank" rel="noopener">API</a>
+    </div>
+    <div class="right">
+      <span class="netpill"><span class="led" id="navled"></span> <span id="navnet">hedera testnet</span></span>
+    </div>
+  </div>
+</nav>
+
+<main id="top">
+  <section class="page-hero">
+    <div class="wrap">
+      <p class="lbl">// everything as data</p>
+      <h2 class="sec">Registry, money, disputes - readable.</h2>
+      <p class="lede">Each tab is one public endpoint. Run a paid read on the <a href="/demo">live demo</a> first if a table is empty.</p>
+      <div class="qbar" style="margin-top:18px">
+        <div class="field">
+          <label for="family">Schema family</label>
+          <select id="family"><option>loading...</option></select>
+        </div>
+        <div class="field">
+          <label for="metric">Metric</label>
+          <select id="metric"><option>-</option></select>
+        </div>
+        <div class="field">
+          <label for="asset">Asset</label>
+          <input type="text" id="asset" value="USDC" style="min-width:112px" />
+        </div>
+        <div class="qmeta" id="qmeta"></div>
+      </div>
+    </div>
+  </section>
+  <section id="explore">
+    <div class="wrap">
+      <p class="lbl">// everything as data</p>
+      <h2 class="sec">The registry, the money and the disputes are all readable.</h2>
+      <p class="lede">
+        Not a dashboard bolted onto a private database. Each tab below is one public endpoint,
+        rendered - including the raw JSON it came from.
+      </p>
+
+      <div class="tabs" id="tabs">
+        <button class="tab on" data-tab="registry">Registry</button>
+        <button class="tab" data-tab="policy">Policy</button>
+        <button class="tab" data-tab="payouts">Payouts</button>
+        <button class="tab" data-tab="disputes">Disputes</button>
+        <button class="tab" data-tab="intents">Agent intents</button>
+        <button class="tab" data-tab="health">Service</button>
+      </div>
+      <div class="tabbody" id="tabbody"><div class="placeholder">loading...</div></div>
+    </div>
+  </section>
+
+  
+  <section>
+    <div class="wrap">
+      <p class="lbl">// api surface</p>
+      <div class="ep">
+        <div><code>GET /v1/reads/:family</code><span>402 unpaid | 409 refused | 200 answered</span></div>
+        <div><code>GET /v1/registry</code><span>Conformance registry</span></div>
+        <div><code>GET /v1/payouts</code><span>Earned / cleared / slashable</span></div>
+        <div><code>POST /v1/disputes</code><span>Re-derive and slash</span></div>
+        <div><code>GET /v1/agent-intents</code><span>Signed ENTER/HOLD decisions</span></div>
+        <div><code>GET /openapi.json</code><span>Machine-readable contract</span></div>
+      </div>
+      <div class="curl" id="curl">curl -i "/v1/reads/aave-v3-ethereum?metric=supplyAPY&amp;asset=USDC"</div>
+    </div>
+  </section>
+</main>
+
+<footer>
+  <div class="wrap">
+    <p class="lbl">// source mark</p>
+    <div class="sig">
+      <img src="/assets/sourcemark-icon.png?v=7" alt="" />
+      <span class="wm">source<i>mark</i></span>
+      <span class="faint">| every answer names its sources, or there is no answer</span>
+    </div>
+    <p class="byline">Made by <a href="https://github.com/KartikDehru" target="_blank" rel="noopener">Kartik Dehru</a> | <a href="https://github.com/KartikDehru/source-mark" target="_blank" rel="noopener">GitHub docs</a> | MIT | ETHOnline 2026</p>
+  </div>
+</footer>
+<script src="/js/common.js?v=7"></script>
+<script src="/js/explore.js?v=7"></script>
+</body>
+</html>

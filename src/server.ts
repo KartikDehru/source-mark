@@ -61,7 +61,23 @@ function publicUrl(c: Context): URL {
   return url;
 }
 
-app.get('/', (c) => c.redirect('/demo'));
+app.get('/', (c) => {
+  try {
+    return c.html(readFileSync(resolvePath(process.cwd(), 'public', 'index.html'), 'utf8'));
+  } catch {
+    return c.redirect('/demo');
+  }
+});
+
+function serveHtml(name: string) {
+  return (c: Context) => {
+    try {
+      return c.html(readFileSync(resolvePath(process.cwd(), 'public', name), 'utf8'));
+    } catch {
+      return c.text(`${name} not found`, 404);
+    }
+  };
+}
 
 /**
  * Machine-readable description of this instance. Bazantic fetches this
@@ -838,12 +854,10 @@ app.post('/v1/consent', async (c) => {
 });
 
 /**
- * Brand assets for the demo page.
+ * Brand assets and static site files for the multi-page demo.
  *
- * Deliberately not a general static file server. The filename is matched
- * against a strict pattern and only SVG is served, so there is no path to
- * traverse out of `public/assets` and no way to have the process hand out a
- * `.env` or a private key because someone found a clever encoding of `..`.
+ * Filenames are matched against a strict pattern so there is no path to
+ * traverse out of `public/` and no way to hand out a `.env` or private key.
  */
 app.get('/assets/:file', (c) => {
   const name = c.req.param('file');
@@ -855,8 +869,6 @@ app.get('/assets/:file', (c) => {
     const bytes = readFileSync(path);
     const isPng = name.toLowerCase().endsWith('.png');
     c.header('content-type', isPng ? 'image/png' : 'image/svg+xml; charset=utf-8');
-    // Revalidate rather than cache for an hour. The failure mode of a long TTL
-    // here is a demo showing a stale or broken logo minutes after it was fixed.
     c.header('cache-control', 'no-cache');
     return c.body(bytes);
   } catch {
@@ -864,14 +876,41 @@ app.get('/assets/:file', (c) => {
   }
 });
 
-app.get('/demo', (c) => {
+app.get('/css/:file', (c) => {
+  const name = c.req.param('file');
+  if (!/^[a-z0-9][a-z0-9._-]*\.css$/i.test(name) || name.includes('..')) {
+    return c.json({ error: 'NOT_FOUND' }, 404);
+  }
   try {
-    const html = readFileSync(resolvePath(process.cwd(), 'public', 'demo.html'), 'utf8');
-    return c.html(html);
+    const path = resolvePath(process.cwd(), 'public', 'css', name);
+    const text = readFileSync(path, 'utf8');
+    c.header('content-type', 'text/css; charset=utf-8');
+    c.header('cache-control', 'no-cache');
+    return c.body(text);
   } catch {
-    return c.text('demo page not found', 404);
+    return c.json({ error: 'NOT_FOUND', file: name }, 404);
   }
 });
+
+app.get('/js/:file', (c) => {
+  const name = c.req.param('file');
+  if (!/^[a-z0-9][a-z0-9._-]*\.js$/i.test(name) || name.includes('..')) {
+    return c.json({ error: 'NOT_FOUND' }, 404);
+  }
+  try {
+    const path = resolvePath(process.cwd(), 'public', 'js', name);
+    const text = readFileSync(path, 'utf8');
+    c.header('content-type', 'application/javascript; charset=utf-8');
+    c.header('cache-control', 'no-cache');
+    return c.body(text);
+  } catch {
+    return c.json({ error: 'NOT_FOUND', file: name }, 404);
+  }
+});
+
+app.get('/demo', serveHtml('demo.html'));
+app.get('/explore', serveHtml('explore.html'));
+app.get('/sdk', serveHtml('sdk.html'));
 
 /**
  * A cooldown on the two demo routes, because both of them spend money.

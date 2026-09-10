@@ -1,0 +1,93 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>SourceMark - SDK</title>
+<meta name="description" content="Paid, provenance-checked reads of standardized onchain data. x402 on Hedera, The Graph, onchain split with slashable holdback." />
+<link rel="icon" type="image/png" href="/assets/sourcemark-icon.png?v=7" />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400..800&family=Spline+Sans+Mono:wght@300..700&display=swap" rel="stylesheet" />
+<link rel="stylesheet" href="/css/site.css?v=7" />
+</head>
+<body>
+<nav>
+  <div class="inner">
+    <a class="mark" href="/">
+      <img src="/assets/sourcemark-icon.png?v=7" alt="" />
+      <span class="wm">source<i>mark</i></span>
+    </a>
+    <div class="links">
+      <a href="/">Home</a>
+      <a href="/demo">Live demo</a>
+      <a href="/explore">Data</a>
+      <a href="/sdk" class="on">SDK</a>
+      <a href="https://github.com/KartikDehru/source-mark" target="_blank" rel="noopener">Docs</a>
+      <a href="https://github.com/KartikDehru/source-mark/blob/main/bazantic/recipe-sourcemark-proven-lending-rate.json" target="_blank" rel="noopener">Recipe</a>
+      <a href="/openapi.json" target="_blank" rel="noopener">API</a>
+    </div>
+    <div class="right">
+      <span class="netpill"><span class="led" id="navled"></span> <span id="navnet">hedera testnet</span></span>
+    </div>
+  </div>
+</nav>
+
+<main id="top">
+  <section class="page-hero">
+    <div class="wrap">
+      <p class="lbl">// sdk</p>
+      <h2 class="sec">Call SourceMark from your agent.</h2>
+      <p class="lede">Thin TypeScript client for the HTTP gate. Pay-per-read still uses the Hedera buyer helpers in the repo when you attach <code>X-PAYMENT</code>.</p>
+    </div>
+  </section>
+  <section>
+    <div class="wrap">
+      <div class="sdk-block">
+        <strong>Install from this repo</strong>
+        <pre>npm install ./sdk</pre>
+      </div>
+      <div class="sdk-block">
+        <strong>Challenge + paid read</strong>
+        <pre>import { SourceMark } from 'sourcemark-sdk';
+
+const sm = new SourceMark({ baseUrl: 'https://source-mark-production.up.railway.app' });
+
+const challenge = await sm.challenge('aave-v3-ethereum', { metric: 'supplyAPY', asset: 'USDC' });
+
+const result = await sm.read('aave-v3-ethereum', {
+  metric: 'supplyAPY',
+  asset: 'USDC',
+  paymentHeader: process.env.X_PAYMENT,
+});
+
+console.log(result.status, result.body?.answer);</pre>
+      </div>
+      <div class="sdk-block">
+        <strong>Also available</strong>
+        <pre>await sm.registry()
+await sm.policy('aave-v3-ethereum')
+await sm.receipt(digest)
+await sm.payouts()
+await sm.health()</pre>
+      </div>
+      <p class="lede" style="margin-top:24px">Full docs: <a href="https://github.com/KartikDehru/source-mark/tree/main/sdk" target="_blank" rel="noopener">https://github.com/KartikDehru/source-mark/tree/main/sdk</a></p>
+    </div>
+  </section>
+</main>
+
+<footer>
+  <div class="wrap">
+    <p class="lbl">// source mark</p>
+    <div class="sig">
+      <img src="/assets/sourcemark-icon.png?v=7" alt="" />
+      <span class="wm">source<i>mark</i></span>
+      <span class="faint">| every answer names its sources, or there is no answer</span>
+    </div>
+    <p class="byline">Made by <a href="https://github.com/KartikDehru" target="_blank" rel="noopener">Kartik Dehru</a> | <a href="https://github.com/KartikDehru/source-mark" target="_blank" rel="noopener">GitHub docs</a> | MIT | ETHOnline 2026</p>
+  </div>
+</footer>
+<script src="/js/common.js?v=7"></script>
+<script src="/js/nav-boot.js?v=7"></script>
+</body>
+</html>
