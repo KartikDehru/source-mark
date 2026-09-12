@@ -4,13 +4,49 @@
 
 **A paid read layer for onchain data that refuses to answer when it cannot prove provenance, pays the sources that answered, and slashes the ones that lie.**
 
-Built from scratch for [ETHOnline 2026](https://ethglobal.com/events/ethonline2026).
-Data from The Graph · payments over x402 on Hedera testnet via the [Blocky402](https://blocky402.com) facilitator · resold through a [Bazantic](https://bazantic.com) gateway for agents that pay in USDC on Base.
+Built from scratch for [ETHOnline 2026](https://ethglobal.com/events/ethonline2026) (Classic / From Scratch).  
+Data from [The Graph](https://thegraph.com) · payments over x402 on Hedera testnet via [Blocky402](https://blocky402.com) · distribution through [Bazantic](https://bazantic.com) for agents that pay in USDC on Base.
+
+| | |
+| --- | --- |
+| **Live gateway** | https://source-mark-production.up.railway.app |
+| **Live demo UI** | https://source-mark-production.up.railway.app/demo |
+| **OpenAPI** | https://source-mark-production.up.railway.app/openapi.json |
+| **Repo** | https://github.com/KartikDehru/source-mark |
+| **Author** | [Kartik Dehru](https://github.com/KartikDehru) |
+
+<p align="center">
+  <img src="public/assets/sourcemark-architecture.png" alt="SourceMark architecture: buyers hit the gateway, provenance gate before settle, Graph sources and Hedera liability" width="900" />
+</p>
 
 ```bash
-curl -i "http://localhost:8787/v1/reads/aave-v3-ethereum?metric=supplyAPY&asset=USDC"
+curl -i "https://source-mark-production.up.railway.app/v1/reads/aave-v3-ethereum?metric=supplyAPY&asset=USDC"
 # HTTP/1.1 402 Payment Required
 ```
+
+---
+
+## What’s live
+
+| Capability | Status | How to verify |
+| --- | --- | --- |
+| Unpaid → real HTTP **402** (x402 / Hedera) | Live | `curl -i` the reads URL above |
+| Paid → Graph fan-out + provenance gate → **200** + signed receipt | Live | `npm run pay` or demo “Run the buying agent” |
+| Policy fail → **409 REFUSED**, **not charged** | Live | `npm run pay -- --strict-age 1` |
+| Onchain split + slashable holdback (`SourcePayouts`) | Live | Contract below · `npm run payouts:status` |
+| Dispute: Graph re-derive · MATCH reject · MISMATCH slash + onchain open/resolve | Live | Demo challenge / falsified twin · `POST /v1/disputes` |
+| HCS receipt digests | Live when configured | `/health` → `hcs` |
+| Multi-page site (home · demo · explore · sdk) | Live | `/` `/demo` `/explore` `/sdk` |
+| Thin TypeScript SDK | Shipped | [`sdk/`](./sdk) |
+| MCP server + `SKILL.md` | Shipped | [`mcp/`](./mcp) · `npm run mcp:smoke` |
+| Bazantic gateway + recipe (SourceMark + Hedera Mirror Node) | Live | [`bazantic/SETUP.md`](./bazantic/SETUP.md) · [`recipe JSON`](./bazantic/recipe-sourcemark-proven-lending-rate.json) |
+
+**Limits:**
+
+1. Payees are **opt-in demo operators** (EIP-191 consent is real; production indexer teams have not necessarily registered).
+2. Disputes are **evidence-backed, not fully trustless** (Graph re-derive offchain; onchain open + arbiter or deadline uphold).
+3. **Testnet scale** — Hedera testnet HBAR and a demo liability pool, not insurance.
+4. **Resale float is operator-funded** — Bazantic USDC and our HBAR rails do not bridge.
 
 ---
 
@@ -23,6 +59,8 @@ Today, three things are broken at once:
 - **Nobody agrees on what conforms to a standard.** Want every lending market that speaks the standardized Messari schema? You hand-build that registry yourself. So does everyone else.
 - **Freshness is self-reported and advisory.** A subgraph tells you its own indexed block. Nothing forces you to check it, and nothing happens to the provider when it's wrong.
 - **The sources capture none of the value.** A gateway monetises the query; the deployments that actually produced the answer aren't in the payment path.
+
+---
 
 ## What this does
 
@@ -39,7 +77,7 @@ GET /v1/reads/:family?metric=<metric>&asset=<symbol>
 5. **Refuse, or answer.** Below quorum → `409 REFUSED`, and the payment is **never settled**. Above quorum → settle, then answer.
 6. **Receipt.** Signed, naming every contributing deployment and the exact block its claim rests on. When HCS is configured, the digest is also published to a Hedera consensus topic.
 7. **Split.** The settled amount goes to the sources that answered, minus a routing fee, with a slice held back unvested.
-8. **Dispute.** Anyone can re-derive a receipt. If it's false, the buyer is refunded from the responsible source's unvested holdback.
+8. **Dispute.** Anyone can re-derive a receipt against The Graph. MATCH → rejected, no slash. MISMATCH → ledger slash and onchain `openDispute`; arbiter may resolve early, or after `disputeResolveSeconds` anyone may call `resolveAfterDeadline`.
 
 ### The bit that makes it honest
 
@@ -64,7 +102,8 @@ That property falls out of one design decision: `verify` and `settle` are separa
 ## Quickstart
 
 ```bash
-git clone <this repo> && cd sourcemark
+git clone https://github.com/KartikDehru/source-mark.git
+cd source-mark
 npm install
 cp .env.example .env
 ```
@@ -77,7 +116,9 @@ Fill in `.env`:
 | `X402_PAY_TO` | A Hedera testnet account id from [portal.hedera.com](https://portal.hedera.com) |
 | `BUYER_ACCOUNT_ID` / `BUYER_PRIVATE_KEY` | A **second**, funded Hedera testnet account — this is the one that pays |
 | `RECEIPT_SIGNING_KEY` | `node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"` |
-| `RESALE_API_KEY` | Optional. The shared secret a reseller gateway forwards. Leave unset and the resale channel is off — it fails closed. |
+| `RESALE_API_KEY` | Optional. Shared secret a reseller gateway forwards. Unset → resale channel off (fails closed). |
+| `SOURCE_PAYOUTS_ADDRESS` | After `npm run payouts:deploy` (onchain split mode) |
+| `DEMO_SOURCE_MNEMONIC` | Dedicated demo payee mnemonic (not the public Hardhat phrase) |
 
 The registry ships with two families already pinned to live mainnet deployments. Verify them, then start:
 
@@ -93,7 +134,7 @@ npm run discover -- --search aave
 npm run discover -- --schema QmNnWjciPb8Qy83RmdgctZmwzwofamjkfmkd5NjK1Swwsa --network mainnet --live
 ```
 
-Verify the paywall with nothing but curl:
+Verify the paywall:
 
 ```bash
 curl -i "http://localhost:8787/v1/reads/aave-v3-ethereum?metric=supplyAPY&asset=USDC"
@@ -103,45 +144,38 @@ Pay for a read, and force a refusal:
 
 ```bash
 npm run pay                          # 402 → sign → settle → answer + receipt
-npm run pay -- --strict-age 1        # demands impossible freshness → 409, not charged
+npm run pay -- --strict-age 1        # impossible freshness → 409, not charged
 npm run agent -- --interval 30       # autonomous buyer on a loop
 ```
 
 `--strict-age` is the reliable refusal lever rather than `--strict-lag`: healthy sources routinely sit at lag 0, so a lag bound cannot be made to fail on demand, but a source is always at least a few seconds old.
 
-Or open **http://localhost:8787/demo**, which drives the whole service from one
-page: pick any family and metric out of the registry, then get the raw 402, pay
-it with the live agent, force a refusal, or arrive through the resale channel.
-A paid read renders its own sources at their answering block, the settlement,
-the signed receipt, and the onchain split — with buttons to re-fetch the receipt
-and to dispute it and watch the holdback get slashed. The registry, policy,
-payouts, disputes and service state are each a tab rendering one public
-endpoint.
+Or open **http://localhost:8787/demo** (also `/`, `/explore`, `/sdk`):
 
-The two demo buttons that spend money (`POST /demo/run`, `POST /demo/resale`)
-are rate limited — one run at a time per caller, 120 an hour overall — because
-they are unauthenticated by design and would otherwise be a way to drain the
-accounts the demo runs on. The paid endpoint needs no such limit: it charges per
-request.
+- Pick a family and metric from the live registry
+- Get the raw 402, pay with the live buyer agent, force a refusal, or arrive via the resale channel
+- After a paid read: signed receipt, onchain split, challenge / falsified-twin dispute
+- Explore tabs render public endpoints (registry, policy, payouts, disputes, agent intents, health)
 
-To expose it publicly — needed for anything that fetches the spec server-side, a
-reseller gateway included:
+The demo buttons that spend money (`POST /demo/run`, `POST /demo/resale`) are rate limited — unauthenticated by design, otherwise they would drain the demo accounts. The paid endpoint needs no such limit: it charges per request.
+
+To expose a local instance publicly (reseller gateways that fetch the spec server-side):
 
 ```bash
-npm run tunnel    # prints the URL, writes PUBLIC_URL to .env, waits until it really answers
+npm run tunnel    # prints URL, writes PUBLIC_URL, waits until it really answers
 ```
 
 ### No Graph key yet?
 
-The service still starts and still serves its 402. Every read will `REFUSE` with `SOURCES_UNPINNED`. That's deliberate — it will never substitute fixtures for live data. A provenance check that falls back to a mock when the real source is unreachable is not a provenance check.
+The service still starts and still serves its 402. Every read will `REFUSE` with `SOURCES_UNPINNED`. That's deliberate — it will never substitute fixtures for live data.
 
 ### Degradation flags
 
 | Flag | Values | Effect |
 | --- | --- | --- |
-| `PAYMENT_MODE` | `x402` \| `free` | `free` drops the paywall; the read layer and its refusals work unchanged. |
+| `PAYMENT_MODE` | `x402` \| `free` | `free` drops the paywall; the read layer and refusals work unchanged. |
 | `SPLIT_MODE` | `ledger` \| `onchain` | `ledger` writes payouts to an auditable local file; `onchain` uses `SourcePayouts.sol`. |
-| `ANCHOR_MODE` | `rpc` \| `relative` | `rpc` compares to true chain head; `relative` compares sources to their best peer (weaker, and labelled as such in every response). |
+| `ANCHOR_MODE` | `rpc` \| `relative` | `rpc` compares to true chain head; `relative` compares sources to their best peer (weaker, labelled in every response). |
 
 ---
 
@@ -150,17 +184,22 @@ The service still starts and still serves its 402. Every read will `REFUSE` with
 | Route | What it does |
 | --- | --- |
 | `GET /v1/reads/:family` | The gate. 402 unpaid · 200 with receipt · 409 refused and uncharged. |
-| `GET /v1/registry` | The conformance registry, as data. Adding a protocol is one entry, zero code. |
-| `GET /v1/policy/:family` | Freshness policy and available metrics for a family. |
-| `GET /v1/receipts/:digest` | The signed evidence behind an answer, plus how to re-derive it. |
-| `POST /v1/disputes` | Challenge a receipt. |
-| `GET /v1/payouts` | Per-source earnings: cleared, held back, slashed. |
-| `GET /v1/consent` · `POST /v1/consent` | List or submit EIP-191 opt-ins from a source's payout address. |
-| `GET /health` | Modes, facilitator reachability, split contract and holdback terms, arbiter, consent counts, resale float, per-family readiness, config warnings. |
-| `GET /openapi.json` | OpenAPI 3.1 description, with 402 and 409 documented as ordinary responses. `servers` reflects the URL the request actually arrived on. |
-| `GET /demo` | Hosted page driving every capability above against live data. |
-| `POST /demo/run` | Runs the real buyer loop against this service and returns the trace. Rate limited. |
-| `POST /demo/resale` | Calls the gate with the shared resale credential server-side, so the browser never holds it. Same path the reseller's gateway hits, minus their billing leg. Rate limited. |
+| `GET /v1/registry` | Conformance registry as data. Adding a protocol is one entry, zero code. |
+| `GET /v1/policy/:family` | Freshness policy and available metrics. |
+| `GET /v1/receipts/:digest` | Signed evidence + how to re-derive / verify. |
+| `POST /v1/disputes` | Challenge a receipt (Graph re-derive → reject or slash). |
+| `POST /v1/disputes/resolve-deadline` | Permissionless onchain uphold after arbiter silence. |
+| `GET /v1/disputes` | Dispute log. |
+| `GET /v1/payouts` | Per-source: earned, cleared, held back, slashed. |
+| `GET /v1/agent-intents` | Signed ENTER/HOLD decisions from the acting buyer. |
+| `GET /v1/consent` · `POST /v1/consent` | List or submit EIP-191 opt-ins from a source payout address. |
+| `GET /health` | Modes, facilitator, split contract, arbiter, consent, resale float, family readiness, warnings. |
+| `GET /openapi.json` | OpenAPI 3.1 (402 and 409 as ordinary responses). |
+| `GET /` `/demo` `/explore` `/sdk` | Multi-page site. |
+| `POST /demo/run` | Real buyer loop. Rate limited. |
+| `POST /demo/resale` | Resale credential server-side (browser never holds it). Rate limited. |
+| `POST /demo/falsify-receipt` | Demo-only: corrupt a receipt twin for the MISMATCH path. |
+| `POST /demo/run-act` | Acting agent: pay → decide → confirm → signed intent. |
 
 <details>
 <summary><b>Sample 402</b></summary>
@@ -173,7 +212,7 @@ The service still starts and still serves its 402. Every read will `REFUSE` with
     "scheme": "exact",
     "network": "hedera:testnet",
     "amount": "100000",
-    "payTo": "0.0.8011510",
+    "payTo": "0.0.10409341",
     "asset": "0.0.0",
     "maxTimeoutSeconds": 300,
     "extra": { "feePayer": "0.0.7162784" }
@@ -211,28 +250,24 @@ The `feePayer` is read live from the facilitator's `/supported` endpoint on ever
 
 **The registry is data, not code.** `registry/families.json` maps a schema family to the deployments that claim to speak it, plus one query template and the metric definitions. Adding a protocol is an edit to that file. Nothing in `src/` knows what Aave is.
 
-**Conformance is byte-identity, not a label.** A family declares a `schemaIpfsHash`, and `npm run registry:doctor` asks The Graph's own network subgraph what schema each pinned deployment actually uses. If the hashes are not identical, the source does not belong in the family regardless of what it is named. That is what makes "speaks a standardized schema" a claim anyone can check rather than one we assert. `npm run discover -- --schema <hash>` walks the same index in reverse to find every conforming deployment — the Messari lending schema currently has 45 deployments, 22 of them live.
+**Conformance is byte-identity, not a label.** A family declares a `schemaIpfsHash`, and `npm run registry:doctor` asks The Graph's own network subgraph what schema each pinned deployment actually uses. If the hashes are not identical, the source does not belong. `npm run discover -- --schema <hash>` walks the same index in reverse to find conforming deployments.
 
 **Sources that should agree are held to it; sources that shouldn't, aren't.** Each family declares its `comparability`:
 
-- `identical` — same protocol, same chain, same schema. These index the same underlying facts, so they must agree within `agreementToleranceBps`. If they don't, at least one is wrong, we cannot tell which, and the read is **refused** rather than answered with a median that splits the difference. This is what stops the freshness gate from being a mere recency check: recent and wrong is still wrong.
-- `peer` — different protocols that happen to share a schema. A USDC supply rate legitimately differs between Aave and Spark, so spread is information about the market, not a fault. No agreement check applies.
+- `identical` — same protocol, same chain, same schema. Must agree within `agreementToleranceBps` or the read is **refused** (recent and wrong is still wrong).
+- `peer` — different protocols that share a schema. Spread is market information, not a fault. Peer headlines are TVL-weighted; dead pools stay in the per-source table but cannot move the headline.
 
-Conflating the two was a real bug during the build: a plain median across Aave V3, Aave V2, Spark, and a wound-down Aave ARC pool reported USDC supply APY as **2.02%** — a rate none of those markets paid. Peer answers are now weighted by the TVL behind each rate (**3.57%**, against Aave V3's 3.60% on $2.3B), which fixes it without an arbitrary size cutoff. The alternative was tuning a TVL floor until the number looked right, which is not a defensible way to choose a threshold. The dead pool still appears in the per-source table; it just cannot move the headline.
+**Deployment IDs are pinned, and the pin is enforced.** Every response carries `_meta.deployment`. If the gateway serves anything other than the ID we pinned, the response is dropped.
 
-**Deployment IDs are pinned, and the pin is enforced.** Every response carries `_meta.deployment`. If the gateway serves anything other than the ID we pinned, the response is dropped rather than merged — a subtle failure mode that would otherwise let a substituted deployment silently into the median.
+**Freshness is measured against real chain head.** `ANCHOR_MODE=rpc` looks up the chain. The weaker best-peer fallback exists, but every response says which reference it used.
 
-**Freshness is measured against real chain head.** A subgraph's self-reported block is a claim, not a fact; it only means something next to where the chain actually is. `ANCHOR_MODE=rpc` goes and looks. The weaker best-peer fallback exists, but every response says which reference it used.
+**Verify and settle are deliberately split.** The facilitator exposes them as separate calls, so we verify before work and settle only after the answer clears the policy.
 
-**Verify and settle are deliberately split.** This is the whole design. The facilitator exposes them as separate calls, so we verify before doing any work and settle only after the answer clears the policy.
+**Liability comes out of revenue, not collateral.** A slice of every payout is held back unvested. That slice is the dispute pool. `SourcePayouts.sol` gives the operator no path to source balances and no rescue sweep.
 
-**Liability comes out of revenue, not collateral.** A slice of every payout is held back unvested for a fixed window. That slice is the dispute pool. No source has to post a bond to participate, and a source that repeatedly serves stale data simply earns less and eventually nothing. `SourcePayouts.sol` gives the operator no code path to source balances, and no rescue function to sweep unclaimed funds.
+**The buyer ships with the seller.** `src/buyer.ts` backs the in-page agent, the CLI, and the loop.
 
-**The buyer ships with the seller.** An x402 endpoint only its author can pay is a paywall, not a payment rail. `src/buyer.ts` backs all three clients — the in-page agent, the CLI, and the loop.
-
-**A read can be resold without loosening the policy.** Bazantic settles in USDC on Base; we price in HBAR on Hedera. Those rails do not meet — a gateway registered `x402-mpp` proxies our free endpoints but fails the paid read with `payment_rejected`, because its payer cannot answer a Hedera challenge. Rather than register an integration whose payment leg cannot execute, the gateway authenticates with a shared secret and the arrangement is modelled as what it is: the reseller bills its callers on its own rail, the operator float covers the inbound leg, and sources are still paid onchain in HBAR with the same split, holdback and liability.
-
-The thing worth pointing at is what *doesn't* change. Both channels run one `completeRead()`, so the refusal rule cannot be enforced on the paid path and quietly skipped on the resale one — a resold read still refuses, still for free. Reads arriving this way carry `channel: "resale"` in both the response and the signed receipt, so anyone reading a receipt can tell which rail paid for it. The credential check fails closed: an unset `RESALE_API_KEY` matches nothing, including a caller sending nothing, so a missing config cannot silently become free reads.
+**Resale does not loosen the policy.** Bazantic settles callers in USDC on Base; we price in HBAR on Hedera. Those rails do not meet, so the Bazantic gateway uses **api-key** auth (`RESALE_API_KEY`) rather than pretending an `x402-mpp` payer can answer a Hedera challenge. The reseller bills upstream; the operator float covers the inbound HBAR leg; sources are still paid onchain with the same split, holdback, and liability. Both channels run one `completeRead()`, so refusal cannot be skipped on resale. Receipts carry `channel: "resale"` when that path was used. An unset `RESALE_API_KEY` matches nothing (fails closed).
 
 ### Stack
 
@@ -240,10 +275,11 @@ The thing worth pointing at is what *doesn't* change. Both channels run one `com
 | --- | --- |
 | Gateway | TypeScript · [Hono](https://hono.dev) · Node 22 |
 | Data | The Graph decentralized gateway, standardized schemas, pinned deployment IDs |
-| Payments | x402 v2 · `exact` scheme · `hedera:testnet` · [Blocky402](https://blocky402.com) facilitator · `@x402/hedera` |
-| Receipts | keccak256 over canonical JSON, EIP-191 signed via viem · digests also published to an [HCS topic](https://hashscan.io/testnet/topic/0.0.10444789) when `HCS_TOPIC_ID` is set |
+| Payments | x402 v2 · `exact` · `hedera:testnet` · [Blocky402](https://blocky402.com) · `@x402/hedera` |
+| Receipts | keccak256 over canonical JSON, EIP-191 via viem · optional [HCS topic](https://hashscan.io/testnet/topic/0.0.10444789) |
 | Contract | Solidity 0.8.24 — `contracts/SourcePayouts.sol` |
-| Agents | MCP server + `SKILL.md` in `mcp/` |
+| Agents | MCP server + `SKILL.md` in `mcp/` · thin client in `sdk/` |
+| Distribution | Bazantic gateway + recipe (SourceMark + Hedera Mirror Node) — see `bazantic/` |
 
 ### Deployed contracts
 
@@ -251,28 +287,19 @@ The thing worth pointing at is what *doesn't* change. Both channels run one `com
 | --- | --- | --- |
 | `SourcePayouts` | Hedera testnet (296) | [`0x5c88d2722a0c883fbbbc8e60a10db4353e6c7cbd`](https://hashscan.io/testnet/contract/0x5c88d2722a0c883fbbbc8e60a10db4353e6c7cbd) |
 
-All six pinned deployments are registered as sources. Check live state with
-`npm run payouts:status`, which reads the contract directly and verifies that
-every tinybar it holds is attributed to the routing fee, a source's cleared
-balance, or a source's holdback.
+Pinned deployments are registered as sources. `npm run payouts:status` reads the contract and checks every tinybar is attributed to routing fee, cleared balance, or holdback.
 
-**The payout addresses start as stand-ins.** No indexer or protocol team has
-handed us a production address. Every source in `registry/families.json` ships
-as `consent: pending`, with addresses derived from the public Hardhat test
-mnemonic (`test test … junk`, indices 0–5) so they cannot be mistaken for real
-operator wallets — anyone can derive the keys and run
-`npx tsx scripts/claim-demo.ts` to claim as a source.
+**Dispute bond units (Hedera):** `disputeBond` is stored in **tinybar** (what `msg.value` arrives as after the JSON-RPC relay). Callers send `bond × 1e10` weibar so `openDispute` matches.
 
-**Consent is still a real path.** `POST /v1/consent` accepts an EIP-191
-signature from the registered payout key and overlays `consent: consented` on
-the live registry without rewriting the file. `npm run consent:demo` signs for
-every stand-in to prove the join path works end to end. What is being
-demonstrated is the contract *and* the opt-in mechanism — not a payout network
-of real teams that does not exist yet.
+### Payees and consent
+
+Payees are **dedicated demo source operators** derived from `DEMO_SOURCE_MNEMONIC` (not the gateway operator, not the public Hardhat `test test … junk` phrase). Production indexer teams have not necessarily registered keys.
+
+`POST /v1/consent` accepts an EIP-191 signature from the registered payout address and overlays `consent: consented` on the live registry. `npm run consent:demo -- --url=<gateway>` opts the demo payees in.
 
 ### Verified end to end
 
-Both claims below were confirmed against live services, not asserted.
+Claims below were confirmed against live services.
 
 **A paid read settles.** Hedera testnet transaction
 [`0.0.7162784@1788816238.698547026`](https://hashscan.io/testnet/transaction/0.0.7162784%401788816238.698547026),
@@ -284,74 +311,38 @@ result `SUCCESS`:
 | `0.0.10409341` | +100,000 tinybar | gateway — read revenue |
 | `0.0.7162784` | −242,480 tinybar | facilitator — absorbs gas, per Hedera's x402 scheme |
 
-The answer returned with it: USDC supply APY **3.5919577023205784%** at block
-25928142, from two independently-operated Aave V3 deployments agreeing to the
-digit (spread 0 bps), receipt
-`0xca7d06249556386b698bbbdbf48fda4d7b26ed2f0162bec6907595aba9c8b50e` signed by
-`0xc1BA021F87Fcd26e47d43b98519faCa47Ad375EA`.
+Answer: USDC supply APY at a live block from two independently operated Aave V3 deployments (spread 0 bps), with a signed receipt.
 
-**A refused read costs nothing.** The same buyer signed a valid payment, the
-gateway verified it with the facilitator, the freshness policy failed, and the
-gateway declined to settle:
+**A refused read costs nothing.** Valid payment verified; freshness policy failed; gateway declined to settle; buyer balance delta **0**.
 
-```
-✓ challenge  402 Payment Required — 100000 on hedera:testnet to 0.0.10409341
-✓ sign       partially-signed TransferTransaction built by 0.0.10409983
-✓ settle     read REFUSED — provenance policy not satisfied, so the gateway did not settle
-
-buyer balance before : 99999900000 tinybar
-buyer balance after  : 99999900000 tinybar
-delta                : 0 tinybar
-```
-
-**The split lands onchain, and a source can withdraw it.** With
-`SPLIT_MODE=onchain`, a settled read is recorded by `recordRead()` in the same
-request. Two reads produced
-[`0x2c1532430528afeef0f7e810a0942054b3c3d0a6a0db546aba81ee1a7fdd573c`](https://hashscan.io/testnet/transaction/0x2c1532430528afeef0f7e810a0942054b3c3d0a6a0db546aba81ee1a7fdd573c)
-and split 100,000 tinybar each as 10,000 routing fee and 45,000 per source, of
-which 9,000 is held back. Source `aave-v3-ethereum-a` then claimed its cleared
-balance in
+**The split lands onchain, and a source can withdraw it.** With `SPLIT_MODE=onchain`, `recordRead()` runs in the same request. Example claim tx:
 [`0x02f8fff8d2372bb14e9f6666483b65a628a45abf203b6d602912eed1f4c45b63`](https://hashscan.io/testnet/transaction/0x02f8fff8d2372bb14e9f6666483b65a628a45abf203b6d602912eed1f4c45b63)
-— 72,000 tinybar owed, exactly 0.00072 HBAR received — while its holdback
-stayed withheld. `npm run payouts:status` reports the contract balanced.
+— owed tinybar matched received HBAR; holdback stayed withheld.
 
-**Dollars go in on one chain, source payouts come out on another.** Through the
-Bazantic gateway
+**Resale: dollars in on Base, source payouts out on Hedera.** Through the Bazantic gateway
 [`kz46uwbv5fewjo2l57uuvnzajq.bazgateway.com`](https://kz46uwbv5fewjo2l57uuvnzajq.bazgateway.com)
-(SourceMark, Railway-backed; older Cloudflare listings are stale),
-a caller paid **$0.01 in USDC on
-Base**; Bazantic forwarded the request; the read was fanned across two pinned
-Graph deployments at block 25,933,010 (lag 0, age 13s) and answered **3.6331%**
-supplyAPY — and both sources were paid **in HBAR on Hedera** in
+(also `sourcemark.bazgateway.com`), a caller paid **$0.01 USDC on Base**; the read still cleared the Graph policy; sources were paid in HBAR in
 [`0xe2d834345a98109b0da0e11bbe85992b16907afcaa172882fa1bdf111d9b3041`](https://hashscan.io/testnet/transaction/0xe2d834345a98109b0da0e11bbe85992b16907afcaa172882fa1bdf111d9b3041).
-The same request with `strictAge=1` returns `409`, free, `channel: "resale"`,
-nothing settled and no source paid. The policy is not relaxed for resold reads.
+`strictAge=1` on that channel still returns `409`, free, `channel: "resale"`.
 
-Bazantic track setup (gateway + multi-service Recipe for Hedera Mirror
-Node): **[bazantic/SETUP.md](./bazantic/SETUP.md)**. The public recipe draft is
-[`bazantic/recipe-sourcemark-proven-lending-rate.json`](./bazantic/recipe-sourcemark-proven-lending-rate.json)
-(the Bazantic dashboard URL requires a login, so judges should use the JSON in
-this repo). The gateway is registered; set the dashboard API credential and
-publish that Recipe to finish qualification.
+**Bazantic track.** Gateway registered; recipe pairs SourceMark with Hedera Mirror Node:
 
-Bazantic also generates an MCP endpoint per gateway from the same spec. It was
-observed serving 7 tools carrying our own `operationId`s and descriptions —
-`readMetric`, `listSchemaFamilies`, `getReceipt`, `listPayouts`,
-`getFamilyPolicy`, `health`, `info` — which is a useful independent check that
-the spec is machine-consumable. It is **currently returning 404 on every
-gateway**, ours and the throwaways alike, so treat that as a Bazantic-side
-outage rather than a working feature. The first-party MCP server in `mcp/` is
-unaffected and is the one to demo.
+- Setup: [`bazantic/SETUP.md`](./bazantic/SETUP.md)
+- Recipe JSON: [`bazantic/recipe-sourcemark-proven-lending-rate.json`](./bazantic/recipe-sourcemark-proven-lending-rate.json)
 
-Reproduce with `npm run pay`, `npm run pay -- --strict-age 1`,
-`npm run payouts:status`, and `npx tsx scripts/claim-demo.ts`.
+Agent tooling for this repo lives in [`mcp/`](./mcp) (stdio MCP server + `SKILL.md`).
 
-> **A Hedera unit trap worth knowing.** Inside a contract `msg.value` arrives
-> in **tinybar** — the JSON-RPC relay divides the transaction's weibar value by
-> 1e10 — while `eth_getBalance` answers in **weibar**. Compare the two directly
-> and correct accounting looks off by 1e10. `scripts/claim-demo.ts` checks
-> owed-against-received on-chain rather than assuming the two units agree,
-> because if they had not, every source payout would have been 1e10 too small.
+Reproduce locally:
+
+```bash
+npm run pay
+npm run pay -- --strict-age 1
+npm run payouts:status
+npx tsx scripts/claim-demo.ts
+npm run mcp:smoke
+```
+
+> **Hedera unit trap.** Inside a contract `msg.value` arrives in **tinybar** (relay divides weibar by 1e10) while `eth_getBalance` answers in **weibar**. Comparing them raw looks off by 1e10. `scripts/claim-demo.ts` checks owed-against-received on-chain.
 
 ---
 
@@ -375,35 +366,36 @@ agent/        autonomous buyer on a loop
 mcp/          MCP server + SKILL.md
 contracts/    SourcePayouts.sol
 public/       multi-page site (home · demo · explore · sdk) + brand assets
+bazantic/     gateway/recipe notes + public recipe JSON
 test/         aggregation + freshness tests; test/contracts/ for Solidity
 scripts/      doctors and one-shot tools (below)
 ```
 
 | Script | What it is for |
 | --- | --- |
-| `registry:doctor` | Live source health, and whether each deployment's schema hash matches the family it claims |
-| `hedera:doctor` | Preflight the payment rail — account existence, balances, ECDSA-vs-ED25519 key type |
-| `mcp:smoke` | Drive the MCP server as a real stdio client through both the answered and refused paths |
-| `discover` | Find deployments sharing a schema hash, to add sources without code changes |
-| `payouts:deploy` | Deploy `SourcePayouts` and register every source in the registry |
-| `payouts:status` | Read contract state and check every tinybar is attributed |
-| `payouts:set-arbiter` | Rotate the onchain arbiter to `ARBITER_ADDRESS` (must differ from the operator) |
-| `consent:demo` | EIP-191-sign consent for every stand-in payout address and POST it |
-| `claim-demo` | Claim as a source, verifying owed matches received on-chain |
-| `rpc-probe` | Show raw Hedera relay status codes, which viem otherwise collapses into "unknown RPC error" |
-| `tunnel` | Put the gateway on a public HTTPS URL, record it as `PUBLIC_URL`, and poll until it genuinely answers rather than trusting the announcement |
+| `registry:doctor` | Live source health + schema hash match |
+| `hedera:doctor` | Payment rail preflight |
+| `mcp:smoke` | MCP stdio client through answered and refused paths |
+| `discover` | Find deployments sharing a schema hash |
+| `payouts:deploy` | Deploy `SourcePayouts` and register sources |
+| `payouts:status` | Read contract state / solvency |
+| `payouts:set-arbiter` | Rotate onchain arbiter to `ARBITER_ADDRESS` |
+| `consent:demo` | EIP-191 consent for demo payees (`--url=` for Railway) |
+| `claim-demo` | Claim as a source; verify owed matches received |
+| `rpc-probe` | Raw Hedera relay status codes |
+| `tunnel` | Public HTTPS URL + `PUBLIC_URL` |
 
 AI tool attribution: **[AI-USAGE.md](./AI-USAGE.md)**
 
 ```bash
-npm run typecheck        # gateway
-npm test                 # gateway tests (aggregation, freshness, resale gate, consent), then contract tests
-npm run contracts:test   # Solidity only, with its own typecheck
+npm run typecheck
+npm test
+npm run contracts:test
 ```
 
 ## Author
 
-**Kartik Dehru** — [kartikdehru2003@gmail.com](mailto:kartikdehru2003@gmail.com)
+**Kartik Dehru** — [kartikdehru2003@gmail.com](mailto:kartikdehru2003@gmail.com) · [GitHub](https://github.com/KartikDehru)
 
 Built solo for [ETHOnline 2026](https://ethglobal.com/events/ethonline2026).
 
