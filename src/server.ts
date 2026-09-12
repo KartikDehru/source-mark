@@ -21,7 +21,7 @@ import {
 import { reproduceReceipt } from './reproduce.js';
 import { digestOf } from './receipt.js';
 import { operatorEvmAddress, recordReadOnchain, checkOnchainSplit, executeOnchainDispute, ensureReceiptOnchain, resolveOnchainAfterDeadline } from './split-onchain.js';
-import { consentMessage, listConsents, recordConsent } from './consent.js';
+import { consentMessage, listConsents, recordConsent, CONSENT_PROVES, CONSENT_DOES_NOT_PROVE } from './consent.js';
 import { recordResaleFloat, resaleFloatSummary } from './resale-float.js';
 import { openApiDocument } from './openapi.js';
 import { appendTo, readCollection } from './store.js';
@@ -137,12 +137,19 @@ app.get('/health', async (c) => {
       totalSources: consents.totalSources,
       consented: consents.consented,
       pending: consents.pending,
+      proves: CONSENT_PROVES,
+      doesNotProve: CONSENT_DOES_NOT_PROVE,
     },
     // Whether the channel exists, never the secret that opens it.
     resale: {
       enabled: Boolean(config.resale.apiKey),
       label: config.resale.label,
       float: { reads: float.reads, grossTinybar: float.grossTinybar },
+      rateLimit: {
+        cooldownMs: RESALE_COOLDOWN_MS,
+        hourlyCap: RESALE_HOURLY_CAP,
+        note: 'Shared key is scoped to the reseller gateway. Per-key cooldown + hourly cap bound float drain; unset RESALE_API_KEY fails closed.',
+      },
     },
     x402: {
       facilitator: config.x402.facilitator,
@@ -271,8 +278,11 @@ app.get('/v1/reads/:family', async (c) => {
   // Bazantic, in USDC on a chain this service does not price in. It presents a
   // shared secret instead of an x402 payload. Everything downstream is the
   // same read — including a free refusal — so this is a different way of
-  // paying, not a way of skipping the policy.
+  // paying, not a way of skipping the policy. The key is rate-limited so a
+  // leaked credential cannot silently empty the operator float.
   if (isResaleRequest(c)) {
+    const limited = resaleThrottled(c);
+    if (limited) return limited;
     return completeRead(c, {
       channel: 'resale',
       readRequest,
@@ -801,9 +811,11 @@ app.get('/v1/consent', (c) => {
   return c.json({
     ...summary,
     records: listConsents(),
+    proves: CONSENT_PROVES,
+    doesNotProve: CONSENT_DOES_NOT_PROVE,
     howTo: [
       'GET /v1/consent/message?deploymentId=…&payoutAddress=…&issuedAt=<unix>',
-      'Sign that exact message with the payout address key (EIP-191 personal_sign).',
+      'Sign that exact message with the payout address key (EIP-191 personal_sign). The message binds deployment ID + payout address + issuedAt.',
       'POST /v1/consent with deploymentId, payoutAddress, issuedAt, signature.',
     ],
   });
@@ -824,6 +836,8 @@ app.get('/v1/consent/message', (c) => {
       issuedAt,
       deploymentId,
       payoutAddress,
+      proves: CONSENT_PROVES,
+      doesNotProve: CONSENT_DOES_NOT_PROVE,
     });
   } catch (err) {
     return c.json({ error: 'BAD_PAYOUT_ADDRESS', detail: err instanceof Error ? err.message : String(err) }, 400);
@@ -940,6 +954,46 @@ const DEMO_COOLDOWN_MS = 6_000;
 const DEMO_HOURLY_CAP = 120;
 const demoLastSeen = new Map<string, number>();
 let demoHour = { start: Date.now(), count: 0 };
+
+/**
+ * Shared resale key is a distribution compromise (Bazantic USDC ≠ Hedera HBAR).
+ * Bound abuse of that single credential so a leak cannot empty the float.
+ * Demo button `/demo/resale` still goes through demoThrottled; this caps the
+ * credentialed `GET /v1/reads` path itself.
+ */
+const RESALE_COOLDOWN_MS = 2_000;
+const RESALE_HOURLY_CAP = 240;
+let resaleHour = { start: Date.now(), count: 0 };
+let resaleLastSeen = 0;
+
+function resaleThrottled(c: Context): Response | null {
+  const now = Date.now();
+  if (now - resaleHour.start > 3_600_000) resaleHour = { start: now, count: 0 };
+  if (resaleHour.count >= RESALE_HOURLY_CAP) {
+    return c.json(
+      {
+        error: 'RESALE_RATE_LIMITED',
+        detail: `Resale channel capped at ${RESALE_HOURLY_CAP} reads/hour to bound operator float drain.`,
+        hint: 'Pay with x402 on Hedera for the uncapped metered path, or rotate RESALE_API_KEY if the key leaked.',
+        retryAfterMs: resaleHour.start + 3_600_000 - now,
+      },
+      429,
+    );
+  }
+  if (now - resaleLastSeen < RESALE_COOLDOWN_MS) {
+    return c.json(
+      {
+        error: 'RESALE_COOLDOWN',
+        detail: 'Resale shared-key path is paced to limit float abuse.',
+        retryAfterMs: RESALE_COOLDOWN_MS - (now - resaleLastSeen),
+      },
+      429,
+    );
+  }
+  resaleLastSeen = now;
+  resaleHour.count += 1;
+  return null;
+}
 
 function demoThrottled(c: Context): Response | null {
   const now = Date.now();

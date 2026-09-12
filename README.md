@@ -2,7 +2,10 @@
 
 # SourceMark — no proof, no answer
 
-**A paid read layer for onchain data that refuses to answer when it cannot prove provenance, pays the sources that answered, and slashes the ones that lie.**
+**A paid read layer for onchain data that refuses to answer when independently pinned deployments cannot agree under one schema hash, pays the sources that answered, and slashes the ones that lie.**
+
+> **Pin agreement ≠ protocol authority.** A receipt proves *N independently pinned deployments agreed* under a schema hash — not that a protocol team's official indexer spoke. Payees are opt-in demo operators (EIP-191 over deployment ID + payout address).  
+> **Verified slash (Hedera testnet):** MISMATCH → UPHELD, 18,000 tinybar from unvested holdback — [`openDispute`](https://hashscan.io/testnet/transaction/0xc55921cd7b4c190627021dfb24cf828dbaebe4dc56b03fe3ace904b5d89548a4) · [`resolveDispute`](https://hashscan.io/testnet/transaction/0x59f3a92ab948c0f1cc0e1d4f9552f9988551abedf1f1ceceab122478e87987bf) · live log [`/v1/disputes`](https://source-mark-production.up.railway.app/v1/disputes).
 
 Built from scratch for [ETHOnline 2026](https://ethglobal.com/events/ethonline2026) (Classic / From Scratch).  
 Data from [The Graph](https://thegraph.com) · payments over x402 on Hedera testnet via [Blocky402](https://blocky402.com) · distribution through [Bazantic](https://bazantic.com) for agents that pay in USDC on Base.
@@ -43,10 +46,11 @@ curl -i "https://source-mark-production.up.railway.app/v1/reads/aave-v3-ethereum
 
 **Limits:**
 
-1. Payees are **opt-in demo operators** (EIP-191 consent is real; production indexer teams have not necessarily registered).
-2. Disputes are **evidence-backed, not fully trustless** (Graph re-derive offchain; onchain open + arbiter or deadline uphold).
-3. **Testnet scale** — Hedera testnet HBAR and a demo liability pool, not insurance.
-4. **Resale float is operator-funded** — Bazantic USDC and our HBAR rails do not bridge.
+1. **Pin agreement ≠ protocol authority.** A source qualifies by matching a pinned deployment ID and schema hash — not by being the protocol team's official indexer. Payees are opt-in demo operators (EIP-191 binds deployment ID + payout address).
+2. **Disputes are evidence-backed, not fully trustless.** Graph re-derive decides MATCH/MISMATCH; onchain open + arbiter or permissionless `resolveAfterDeadline` executes the outcome.
+3. **Testnet liability, not insurance.** Hedera testnet HBAR and a demo holdback pool. The slash path works under live contract pressure; real capital is roadmap.
+4. **Resale is a rails compromise.** Bazantic USDC and Hedera HBAR do not bridge. Shared key + operator float; same `completeRead()` gate. Unset `RESALE_API_KEY` fails closed. (Gateway also applies a cooldown + hourly cap on the shared-key path when that code is deployed.)
+5. **Schema wedge.** Demonstrated families are Messari lending APY/TVL on Ethereum-family subgraphs. New family = `npm run discover -- --schema <hash>` → edit `registry/families.json` → `registry:doctor`.
 
 ---
 
@@ -73,11 +77,11 @@ GET /v1/reads/:family?metric=<metric>&asset=<symbol>
 1. **Unpaid → a real HTTP 402** carrying x402 payment requirements. No key, no account, no signup.
 2. **Paid → verify first, work second.** The payment is verified with the facilitator but *not settled yet*.
 3. **Fan out across a schema family.** The registry maps the family to N pinned deployment IDs; the same query goes to all of them.
-4. **Enforce provenance.** Every source must be within the block-lag and age bounds, must report no indexing errors, and must match its pinned deployment ID. Failures are dropped, with a reason.
+4. **Enforce pin + freshness.** Every source must be within the block-lag and age bounds, must report no indexing errors, and must match its pinned deployment ID. Failures are dropped, with a reason. Agreement means N independently pinned deployments agreed — not that a protocol team's official indexer spoke.
 5. **Refuse, or answer.** Below quorum → `409 REFUSED`, and the payment is **never settled**. Above quorum → settle, then answer.
 6. **Receipt.** Signed, naming every contributing deployment and the exact block its claim rests on. When HCS is configured, the digest is also published to a Hedera consensus topic.
 7. **Split.** The settled amount goes to the sources that answered, minus a routing fee, with a slice held back unvested.
-8. **Dispute.** Anyone can re-derive a receipt against The Graph. MATCH → rejected, no slash. MISMATCH → ledger slash and onchain `openDispute`; arbiter may resolve early, or after `disputeResolveSeconds` anyone may call `resolveAfterDeadline`.
+8. **Dispute.** Anyone can re-derive a receipt against The Graph (**evidence**). MATCH → rejected, no slash. MISMATCH → ledger slash and onchain `openDispute`; arbiter may resolve early, or after `disputeResolveSeconds` anyone may call `resolveAfterDeadline` (**execution**). Contested answers are evidence-backed with a timed default against silence — not fully trustless Graph-onchain adjudication.
 
 ### The bit that makes it honest
 
@@ -267,7 +271,7 @@ The `feePayer` is read live from the facilitator's `/supported` endpoint on ever
 
 **The buyer ships with the seller.** `src/buyer.ts` backs the in-page agent, the CLI, and the loop.
 
-**Resale does not loosen the policy.** Bazantic settles callers in USDC on Base; we price in HBAR on Hedera. Those rails do not meet, so the Bazantic gateway uses **api-key** auth (`RESALE_API_KEY`) rather than pretending an `x402-mpp` payer can answer a Hedera challenge. The reseller bills upstream; the operator float covers the inbound HBAR leg; sources are still paid onchain with the same split, holdback, and liability. Both channels run one `completeRead()`, so refusal cannot be skipped on resale. Receipts carry `channel: "resale"` when that path was used. An unset `RESALE_API_KEY` matches nothing (fails closed).
+**Resale does not loosen the policy.** Bazantic settles callers in USDC on Base; we price in HBAR on Hedera. Those rails do not meet, so the Bazantic gateway uses **api-key** auth (`RESALE_API_KEY`) rather than pretending an `x402-mpp` payer can answer a Hedera challenge. That shared key is a **distribution compromise**, not a second product: the reseller bills upstream; the operator float covers the inbound HBAR leg; sources are still paid onchain with the same split, holdback, and liability. Both channels run one `completeRead()`, so refusal cannot be skipped on resale. Demo/resale click paths are throttled; the credentialed read path also applies a cooldown + hourly cap (see `/health` → `resale.rateLimit` when deployed). Receipts carry `channel: "resale"` when that path was used. An unset `RESALE_API_KEY` matches nothing (fails closed).
 
 ### Stack
 
@@ -295,7 +299,7 @@ Pinned deployments are registered as sources. `npm run payouts:status` reads the
 
 Payees are **dedicated demo source operators** derived from `DEMO_SOURCE_MNEMONIC` (not the gateway operator, not the public Hardhat `test test … junk` phrase). Production indexer teams have not necessarily registered keys.
 
-`POST /v1/consent` accepts an EIP-191 signature from the registered payout address and overlays `consent: consented` on the live registry. `npm run consent:demo -- --url=<gateway>` opts the demo payees in.
+`POST /v1/consent` accepts an EIP-191 signature from the registered payout address over a message that binds **deployment ID + payout address + issuedAt**, and overlays `consent: consented` on the live registry. That proves **key control for a pinned deployment** — not official indexer identity or protocol-team affiliation. `npm run consent:demo -- --url=<gateway>` opts the demo payees in.
 
 ### Verified end to end
 
@@ -318,6 +322,14 @@ Answer: USDC supply APY at a live block from two independently operated Aave V3 
 **The split lands onchain, and a source can withdraw it.** With `SPLIT_MODE=onchain`, `recordRead()` runs in the same request. Example claim tx:
 [`0x02f8fff8d2372bb14e9f6666483b65a628a45abf203b6d602912eed1f4c45b63`](https://hashscan.io/testnet/transaction/0x02f8fff8d2372bb14e9f6666483b65a628a45abf203b6d602912eed1f4c45b63)
 — owed tinybar matched received HBAR; holdback stayed withheld.
+
+**A falsified twin gets slashed (MISMATCH → UPHELD).** Digest
+`0x73f2b26c248537b568d0b56a22d84eed469866d954aa45b42a93a235120b9372`:
+Graph re-derive returned MISMATCH; **18,000 tinybar** refunded from unvested holdback; onchain
+[`openDispute`](https://hashscan.io/testnet/transaction/0xc55921cd7b4c190627021dfb24cf828dbaebe4dc56b03fe3ace904b5d89548a4)
+then arbiter
+[`resolveDispute`](https://hashscan.io/testnet/transaction/0x59f3a92ab948c0f1cc0e1d4f9552f9988551abedf1f1ceceab122478e87987bf).
+Live log: [`GET /v1/disputes`](https://source-mark-production.up.railway.app/v1/disputes) · UI: [/explore](https://source-mark-production.up.railway.app/explore). Testnet capital — but the holdback mechanism bit.
 
 **Resale: dollars in on Base, source payouts out on Hedera.** Through the Bazantic gateway
 [`kz46uwbv5fewjo2l57uuvnzajq.bazgateway.com`](https://kz46uwbv5fewjo2l57uuvnzajq.bazgateway.com)
@@ -348,10 +360,11 @@ npm run mcp:smoke
 
 ## What this does **not** do
 
-1. **Payees are opt-in demo operators.** Consent is real EIP-191. Production indexer teams have not necessarily registered.
-2. **Disputes are evidence-backed, not fully trustless.** Graph re-derive offchain; onchain open plus arbiter or deadline uphold.
-3. **Testnet scale.** Hedera testnet HBAR and a demo liability pool — not insurance.
-4. **Resale float is operator-funded.** Bazantic USDC and our HBAR rails do not bridge.
+1. **Pin agreement ≠ protocol authority.** Sources qualify by pin + schema hash. Consent proves payout-key control for a deployment on this gateway — not official indexer identity.
+2. **Disputes are evidence-backed, not fully trustless.** Graph re-derive offchain; onchain open plus arbiter or permissionless deadline uphold.
+3. **Testnet liability, not insurance.** Hedera testnet HBAR and a demo holdback pool.
+4. **Resale float is operator-funded.** Bazantic USDC and Hedera HBAR do not bridge; shared key is rate-limited.
+5. **Narrow schema wedge.** Lending APY/TVL families today; onboarding a new family is a registry data change, not a claim that every onchain schema is live.
 
 ---
 

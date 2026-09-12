@@ -30,7 +30,7 @@ Target prize: **Best Recipe that uses EthGlobal Hackathon Sponsor APIs**
 | Recipe JSON (public, no login) | [`recipe-sourcemark-proven-lending-rate.json`](./recipe-sourcemark-proven-lending-rate.json) |
 | MCP | https://sourcemark.bazgateway.com/mcp |
 
-Auth type is **`api-key`** (not `x402-mpp`): Bazantic settles callers in USDC on Base; SourceMark prices in HBAR on Hedera. Those rails do not meet. The gateway forwards `RESALE_API_KEY`; SourceMark still runs the full provenance gate and pays sources onchain.
+Auth type is **`api-key`** (not `x402-mpp`): Bazantic settles callers in USDC on Base; SourceMark prices in HBAR on Hedera. Those rails do not meet. The gateway forwards `RESALE_API_KEY`; SourceMark still runs the full pin/freshness gate and pays sources onchain from the **operator float**. The shared key is intentionally a distribution compromise: it is **rate-limited** (cooldown + hourly cap on `GET /v1/reads` with the key; demo button also throttled) and fails closed when unset. Rotate the key if it leaks. Float spend is visible on `/health` → `resale.float`.
 
 ## Dashboard steps (required now)
 

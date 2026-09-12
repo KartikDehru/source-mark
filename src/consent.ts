@@ -16,6 +16,13 @@ import { readCollection, writeCollection } from './store.js';
 
 export const CONSENT_MESSAGE_PREFIX = 'SourceMark consent v1';
 
+/** What EIP-191 consent proves vs does not — for API/docs honesty. */
+export const CONSENT_PROVES =
+  'Control of the registered payout address for a pinned deployment ID, via EIP-191.';
+
+export const CONSENT_DOES_NOT_PROVE =
+  'Official indexer identity, protocol-team affiliation, or off-registry reputation.';
+
 export interface ConsentRecord {
   deploymentId: string;
   payoutAddress: string;
